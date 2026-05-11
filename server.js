@@ -7,7 +7,8 @@ const io = new Server(server);
 
 // База данных
 const users = new Map(); // username -> { password, friends }
-const privateMessages = new Map(); // 'user1|user2' -> []
+const globalMessages = []; // все сообщения общего чата
+const privateMessagesStore = new Map(); // 'user1|user2' -> []
 let onlineUsers = new Set();
 
 app.use(express.json({ limit: '50mb' }));
@@ -394,13 +395,13 @@ app.post('/addFriend', (req, res) => {
 });
 
 app.get('/globalMessages', (req, res) => {
-  res.json(globalMessages || []);
+  res.json(globalMessages);
 });
 
 app.post('/privateMessages', (req, res) => {
   const { user1, user2 } = req.body;
   const key = [user1, user2].sort().join('|');
-  res.json(privateMessages.get(key) || []);
+  res.json(privateMessagesStore.get(key) || []);
 });
 
 app.post('/ai', async (req, res) => {
@@ -423,8 +424,8 @@ app.post('/ai', async (req, res) => {
 });
 
 // Хранилища сообщений
-let globalMessages = [];
-let privateMessages = new Map();
+let globalMessagesStore = [];
+let privateMessagesMap = new Map();
 let online = 0;
 
 io.on('connection', (socket) => {
@@ -438,17 +439,17 @@ io.on('connection', (socket) => {
   
   socket.on('global message', (msg) => {
     const message = { from: msg.from, text: msg.text, gif: msg.gif, image: msg.image, time: new Date() };
-    globalMessages.push(message);
-    if (globalMessages.length > 100) globalMessages.shift();
+    globalMessagesStore.push(message);
+    if (globalMessagesStore.length > 100) globalMessagesStore.shift();
     io.emit('global message', message);
   });
   
   socket.on('private message', (msg) => {
     const { from, to, text, gif, image } = msg;
     const key = [from, to].sort().join('|');
-    if (!privateMessages.has(key)) privateMessages.set(key, []);
+    if (!privateMessagesMap.has(key)) privateMessagesMap.set(key, []);
     const message = { from, to, text, gif, image, time: new Date() };
-    privateMessages.get(key).push(message);
+    privateMessagesMap.get(key).push(message);
     io.emit('private message', message);
   });
   
