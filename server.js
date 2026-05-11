@@ -6,10 +6,10 @@ const { Server } = require('socket.io');
 const io = new Server(server);
 
 // База данных
-const users = new Map(); // username -> { password, friends }
-const globalMessages = []; // все сообщения общего чата
-const privateMessagesStore = new Map(); // 'user1|user2' -> []
-let onlineUsers = new Set();
+const users = new Map(); // username -> { password, friends, device }
+const globalMessages = [];
+const privateMessages = new Map(); // 'user1|user2' -> []
+let online = 0;
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -18,78 +18,87 @@ app.get('/', (req, res) => {
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
     <title>Skebob Messenger</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1e1f22; height: 100vh; overflow: hidden; }
         
         /* Экран входа */
-        .login-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1e1f22; display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .login-box { background: #2b2d31; padding: 40px; border-radius: 16px; width: 350px; text-align: center; }
-        .login-box h1 { color: white; margin-bottom: 20px; }
-        .login-box input { width: 100%; padding: 12px; margin: 8px 0; background: #1e1f22; border: none; color: white; border-radius: 8px; }
-        .login-box button { width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 8px; cursor: pointer; background: #5865f2; color: white; font-size: 16px; }
+        .login-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1e1f22; display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .login-box { background: #2b2d31; padding: 30px; border-radius: 24px; width: 100%; max-width: 380px; text-align: center; }
+        .login-box h1 { color: white; margin-bottom: 20px; font-size: 28px; }
+        .login-box input { width: 100%; padding: 14px; margin: 8px 0; background: #1e1f22; border: none; color: white; border-radius: 12px; font-size: 16px; }
+        .login-box button { width: 100%; padding: 14px; margin: 8px 0; border: none; border-radius: 12px; cursor: pointer; background: #5865f2; color: white; font-size: 16px; font-weight: 600; }
         .login-box .register { background: #23a55a; }
         
-        /* Основной чат */
-        .app { display: none; height: 100vh; display: flex; }
+        /* Выбор устройства */
+        .device-select { margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        .device-btn { flex: 1; padding: 10px; background: #1e1f22; border: 2px solid #3a3c43; border-radius: 12px; cursor: pointer; color: white; font-size: 14px; transition: 0.2s; }
+        .device-btn.selected { border-color: #5865f2; background: #5865f2; }
         
-        /* Боковая панель */
-        .sidebar { width: 280px; background: #2b2d31; display: flex; flex-direction: column; }
+        /* Основной чат — мобильная адаптация */
+        .app { display: none; height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Боковая панель (для мобильных — выезжающая) */
+        .sidebar { position: fixed; top: 0; left: -280px; bottom: 0; width: 280px; background: #2b2d31; z-index: 200; transition: 0.3s; display: flex; flex-direction: column; }
+        .sidebar.open { left: 0; }
         .sidebar-header { padding: 20px; border-bottom: 1px solid #1e1f22; }
         .sidebar-header h3 { color: white; }
         .online-count { font-size: 12px; color: #949ba4; margin-top: 5px; }
         .friends-list { flex: 1; overflow-y: auto; padding: 10px; }
-        .friend { padding: 12px; border-radius: 8px; cursor: pointer; color: #dbdee1; display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
-        .friend:hover { background: #3a3c43; }
-        .friend.active { background: #3a3c43; }
-        .friend-avatar { width: 40px; height: 40px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .friend { padding: 12px; border-radius: 12px; cursor: pointer; color: #dbdee1; display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+        .friend:hover, .friend.active { background: #3a3c43; }
+        .friend-avatar { width: 44px; height: 44px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; }
         .friend-info { flex: 1; }
         .friend-name { font-weight: 500; }
         .friend-status { font-size: 11px; color: #949ba4; }
         
         .add-friend { padding: 16px; border-top: 1px solid #1e1f22; display: flex; gap: 8px; }
-        .add-friend input { flex: 1; padding: 10px; background: #1e1f22; border: none; color: white; border-radius: 8px; }
-        .add-friend button { padding: 10px 16px; background: #23a55a; border: none; border-radius: 8px; color: white; cursor: pointer; }
+        .add-friend input { flex: 1; padding: 12px; background: #1e1f22; border: none; color: white; border-radius: 12px; }
+        .add-friend button { padding: 12px 16px; background: #23a55a; border: none; border-radius: 12px; color: white; cursor: pointer; }
         
         /* Область чата */
         .chat-area { flex: 1; display: flex; flex-direction: column; background: #313338; }
-        .chat-header { padding: 16px 20px; background: #2b2d31; border-bottom: 1px solid #1e1f22; display: flex; justify-content: space-between; align-items: center; }
+        .chat-header { padding: 12px 16px; background: #2b2d31; border-bottom: 1px solid #1e1f22; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .chat-header h2 { color: white; font-size: 16px; }
-        .action-buttons { display: flex; gap: 8px; }
-        .action-btn { padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer; color: white; }
+        .action-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+        .action-btn { padding: 6px 12px; border-radius: 20px; border: none; cursor: pointer; color: white; font-size: 13px; }
         .gif-btn { background: #e67e22; }
         .ai-btn { background: #9b59b6; }
         .call-btn { background: #2ecc71; }
         
-        .messages-area { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-        .message { display: flex; gap: 12px; }
+        .messages-area { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .message { display: flex; gap: 10px; }
         .message-mine { flex-direction: row-reverse; }
-        .message-avatar { width: 40px; height: 40px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-        .message-content { max-width: 70%; }
-        .message-header { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
-        .message-name { color: white; font-size: 14px; font-weight: 500; }
-        .message-time { color: #949ba4; font-size: 11px; }
-        .message-text { background: #2b2d31; padding: 8px 12px; border-radius: 16px; color: white; word-wrap: break-word; }
+        .message-avatar { width: 36px; height: 36px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+        .message-content { max-width: 75%; }
+        .message-header { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; flex-wrap: wrap; }
+        .message-name { color: white; font-size: 13px; font-weight: 500; }
+        .message-time { color: #949ba4; font-size: 10px; }
+        .message-text { background: #2b2d31; padding: 8px 12px; border-radius: 18px; color: white; word-wrap: break-word; font-size: 14px; }
         .message-mine .message-text { background: #5865f2; }
-        .message-img { max-width: 200px; border-radius: 12px; margin-top: 6px; }
+        .message-img { max-width: 180px; border-radius: 12px; margin-top: 6px; }
         
-        .input-panel { padding: 16px; background: #2b2d31; display: flex; gap: 12px; border-top: 1px solid #1e1f22; }
-        .input-panel input { flex: 1; padding: 12px; background: #1e1f22; border: none; border-radius: 24px; color: white; }
-        .input-panel button { padding: 8px 20px; background: #5865f2; border: none; border-radius: 24px; color: white; cursor: pointer; }
+        .input-panel { padding: 12px; background: #2b2d31; display: flex; gap: 8px; border-top: 1px solid #1e1f22; }
+        .input-panel input { flex: 1; padding: 12px; background: #1e1f22; border: none; border-radius: 28px; color: white; font-size: 15px; }
+        .input-panel button { padding: 8px 16px; background: #5865f2; border: none; border-radius: 28px; color: white; cursor: pointer; font-size: 14px; }
         
-        .gif-modal { display: none; position: fixed; bottom: 100px; right: 20px; background: #2b2d31; padding: 12px; border-radius: 12px; width: 300px; flex-wrap: wrap; gap: 8px; max-height: 350px; overflow-y: auto; z-index: 1000; }
-        .gif-modal img { width: 85px; height: 85px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+        .gif-modal { display: none; position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #2b2d31; padding: 12px; border-radius: 20px; width: 90%; max-width: 320px; flex-wrap: wrap; gap: 8px; max-height: 300px; overflow-y: auto; z-index: 1000; }
+        .gif-modal img { width: calc(33% - 6px); aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; cursor: pointer; }
         
-        @media (max-width: 768px) {
-            .sidebar { position: fixed; left: -280px; top: 0; bottom: 0; z-index: 100; transition: 0.3s; }
-            .sidebar.open { left: 0; }
-            .menu-toggle { display: block; position: fixed; bottom: 20px; left: 20px; z-index: 101; background: #5865f2; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; cursor: pointer; border: none; }
+        .menu-toggle { position: fixed; bottom: 20px; left: 20px; z-index: 150; background: #5865f2; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; cursor: pointer; border: none; font-size: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        
+        @media (min-width: 769px) {
+            .sidebar { position: relative; left: 0; width: 280px; }
+            .menu-toggle { display: none; }
+            .app { flex-direction: row; }
         }
-        @media (min-width: 769px) { .menu-toggle { display: none; } }
         
-        .menu-toggle { position: fixed; bottom: 20px; left: 20px; z-index: 101; background: #5865f2; width: 50px; height: 50px; border-radius: 50%; display: none; align-items: center; justify-content: center; color: white; cursor: pointer; border: none; font-size: 24px; }
+        /* Темы для разных устройств */
+        body.android .message-mine .message-text { background: #e91e63; }
+        body.iphone .message-mine .message-text { background: #007aff; }
+        body.web .message-mine .message-text { background: #5865f2; }
     </style>
 </head>
 <body>
@@ -101,6 +110,11 @@ app.get('/', (req, res) => {
         <h1>💬 Skebob Messenger</h1>
         <input type="text" id="loginName" placeholder="Имя пользователя">
         <input type="password" id="loginPass" placeholder="Пароль">
+        <div class="device-select">
+            <button class="device-btn" data-device="android">🤖 Android</button>
+            <button class="device-btn" data-device="iphone">📱 iPhone</button>
+            <button class="device-btn" data-device="web">💻 Web</button>
+        </div>
         <button id="loginBtn">Войти</button>
         <button id="registerBtn" class="register">Регистрация</button>
     </div>
@@ -146,6 +160,18 @@ app.get('/', (req, res) => {
     let currentUser = '';
     let currentChat = { type: 'global', name: 'Общий чат' };
     let friends = [];
+    let selectedDevice = 'web';
+    
+    // Выбор устройства
+    document.querySelectorAll('.device-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedDevice = btn.dataset.device;
+            document.body.className = selectedDevice;
+        };
+    });
+    document.querySelector('.device-btn[data-device="web"]').classList.add('selected');
     
     // Регистрация
     document.getElementById('registerBtn').onclick = async () => {
@@ -155,10 +181,14 @@ app.get('/', (req, res) => {
         const res = await fetch('/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username, password, device: selectedDevice })
         });
         const data = await res.json();
         alert(data.message);
+        if (data.success) {
+            document.getElementById('loginName').value = '';
+            document.getElementById('loginPass').value = '';
+        }
     };
     
     // Вход
@@ -174,6 +204,7 @@ app.get('/', (req, res) => {
         if (data.success) {
             currentUser = username;
             friends = data.friends || [];
+            if (data.device) document.body.className = data.device;
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('app').style.display = 'flex';
             
@@ -189,8 +220,12 @@ app.get('/', (req, res) => {
             });
             
             socket.on('private message', (msg) => {
+                console.log('Получено ЛС:', msg);
                 if (currentChat.type === 'private' && currentChat.name === msg.from) {
                     addMessage(msg);
+                }
+                if (msg.from === currentUser || msg.to === currentUser) {
+                    // Обновляем список друзей, чтобы показать активность
                 }
             });
             
@@ -207,7 +242,7 @@ app.get('/', (req, res) => {
         friends.forEach(f => {
             const div = document.createElement('div');
             div.className = 'friend ' + (currentChat.type === 'private' && currentChat.name === f ? 'active' : '');
-            div.innerHTML = '<div class="friend-avatar">👤</div><div class="friend-info"><div class="friend-name">' + f + '</div><div class="friend-status">Онлайн</div></div>';
+            div.innerHTML = '<div class="friend-avatar">👤</div><div class="friend-info"><div class="friend-name">' + escapeHtml(f) + '</div><div class="friend-status">Нажми для чата</div></div>';
             div.onclick = () => openPrivateChat(f);
             container.appendChild(div);
         });
@@ -288,7 +323,7 @@ app.get('/', (req, res) => {
         });
         const data = await res.json();
         if (data.success) {
-            friends.push(friend);
+            if (!friends.includes(friend)) friends.push(friend);
             renderFriends();
             document.getElementById('newFriend').value = '';
         } else {
@@ -373,9 +408,9 @@ app.get('/', (req, res) => {
 
 // API
 app.post('/register', (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, device } = req.body;
   if (users.has(username)) return res.json({ success: false, message: 'Пользователь существует' });
-  users.set(username, { password, friends: [] });
+  users.set(username, { password, friends: [], device: device || 'web' });
   res.json({ success: true, message: 'Регистрация успешна! Теперь войдите.' });
 });
 
@@ -383,7 +418,7 @@ app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const user = users.get(username);
   if (!user || user.password !== password) return res.json({ success: false });
-  res.json({ success: true, friends: user.friends || [] });
+  res.json({ success: true, friends: user.friends || [], device: user.device || 'web' });
 });
 
 app.post('/addFriend', (req, res) => {
@@ -401,7 +436,7 @@ app.get('/globalMessages', (req, res) => {
 app.post('/privateMessages', (req, res) => {
   const { user1, user2 } = req.body;
   const key = [user1, user2].sort().join('|');
-  res.json(privateMessagesStore.get(key) || []);
+  res.json(privateMessages.get(key) || []);
 });
 
 app.post('/ai', async (req, res) => {
@@ -425,16 +460,16 @@ app.post('/ai', async (req, res) => {
 
 // Хранилища сообщений
 let globalMessagesStore = [];
-let privateMessagesMap = new Map();
-let online = 0;
+let privateMessagesStore = new Map();
+let onlineCount = 0;
 
 io.on('connection', (socket) => {
   let currentUser = '';
   
   socket.on('user online', (user) => {
     currentUser = user;
-    online++;
-    io.emit('online count', online);
+    onlineCount++;
+    io.emit('online count', onlineCount);
   });
   
   socket.on('global message', (msg) => {
@@ -447,16 +482,17 @@ io.on('connection', (socket) => {
   socket.on('private message', (msg) => {
     const { from, to, text, gif, image } = msg;
     const key = [from, to].sort().join('|');
-    if (!privateMessagesMap.has(key)) privateMessagesMap.set(key, []);
+    if (!privateMessagesStore.has(key)) privateMessagesStore.set(key, []);
     const message = { from, to, text, gif, image, time: new Date() };
-    privateMessagesMap.get(key).push(message);
+    privateMessagesStore.get(key).push(message);
+    // Отправляем конкретным получателям
     io.emit('private message', message);
   });
   
   socket.on('disconnect', () => {
     if (currentUser) {
-      online--;
-      io.emit('online count', online);
+      onlineCount--;
+      io.emit('online count', onlineCount);
     }
   });
 });
