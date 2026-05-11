@@ -66,7 +66,7 @@ app.get('/', (req, res) => {
 <body>
 
 <div id="authContainer" class="auth-container">
-    <h1>🚀 Супер Мессенджер</h1>
+    <h1>🚀 Скебоб Мессенджер</h1>
     <div id="authForm">
         <input type="text" id="authUsername" placeholder="Имя пользователя">
         <input type="password" id="authPassword" placeholder="Пароль">
