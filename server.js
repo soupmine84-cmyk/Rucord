@@ -5,447 +5,329 @@ const server = http.createServer(app);
 const { Server } = require('socket.io');
 const io = new Server(server);
 
-const users = new Map();
-const servers = new Map();
-let messagesCache = new Map();
-
-// Создаём тестовый сервер
-servers.set('main', {
-  id: 'main',
-  name: 'Skebob Community',
-  owner: 'system',
-  channels: [
-    { id: 'general', name: 'общий', type: 'text' },
-    { id: 'games', name: 'игры', type: 'text' }
-  ]
-});
+// База данных
+const users = new Map(); // username -> { password, friends }
+const privateMessages = new Map(); // `user1|user2` -> []
+let onlineUsers = new Set();
 
 app.use(express.json({ limit: '50mb' }));
 
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Skebob Messenger</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1e1f22; height: 100vh; overflow: hidden; }
+        body { font-family: Arial; background: #1e1f22; height: 100vh; display: flex; justify-content: center; align-items: center; }
         
-        @media (max-width: 768px) {
-            .servers-bar { width: 60px; }
-            .channels-bar { position: fixed; left: -260px; top: 0; bottom: 0; width: 260px; z-index: 100; transition: 0.3s; background: #2b2d31; }
-            .channels-bar.open { left: 60px; }
-            .menu-toggle { display: flex; }
-            .main-chat { margin-left: 0; }
-        }
-        @media (min-width: 769px) {
-            .channels-bar { display: flex; position: relative; left: 0; }
-            .menu-toggle { display: none; }
-        }
-        
-        .app { display: flex; height: 100vh; }
-        .servers-bar { width: 72px; background: #1e1f22; display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 8px; overflow-y: auto; }
-        .server-icon { width: 48px; height: 48px; background: #313338; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; color: white; font-weight: bold; font-size: 20px; }
-        .server-icon.active, .server-icon:hover { border-radius: 16px; background: #5865f2; }
-        .add-server { background: #2b2d31; color: #23a55a; }
-        
-        .channels-bar { width: 260px; background: #2b2d31; flex-direction: column; padding: 16px; overflow-y: auto; }
-        .server-name { color: white; font-weight: 600; padding-bottom: 16px; border-bottom: 1px solid #1e1f22; margin-bottom: 16px; }
-        .channel-category { color: #949ba4; font-size: 12px; font-weight: 600; margin: 16px 0 8px 0; }
-        .channel { padding: 6px 8px; border-radius: 4px; cursor: pointer; color: #949ba4; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
-        .channel:hover, .channel.active { background: #3a3c43; color: white; }
-        
-        .friend { padding: 8px; border-radius: 4px; cursor: pointer; color: #949ba4; display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-        .friend:hover { background: #3a3c43; color: white; }
-        
-        .main-chat { flex: 1; display: flex; flex-direction: column; background: #313338; }
-        .chat-header { padding: 12px 16px; background: #2b2d31; border-bottom: 1px solid #1e1f22; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-        .chat-header h2 { color: white; font-size: 16px; }
-        .action-btn { padding: 6px 12px; border-radius: 8px; border: none; color: white; cursor: pointer; font-size: 14px; }
-        .call-btn { background: #23a55a; }
-        .gif-btn { background: #e67e22; }
-        .ai-btn { background: #9b59b6; }
-        
-        .messages-area { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-        .message { display: flex; gap: 10px; }
-        .message-mine { flex-direction: row-reverse; }
-        .message-content { max-width: 70%; }
-        .message-text { background: #2b2d31; padding: 8px 12px; border-radius: 18px; color: white; }
-        .message-mine .message-text { background: #5865f2; }
-        .message-name { font-size: 12px; color: #949ba4; margin-bottom: 4px; }
-        
-        .input-panel { padding: 12px 16px; background: #2b2d31; display: flex; gap: 8px; border-top: 1px solid #1e1f22; }
-        .input-panel input { flex: 1; padding: 10px; background: #1e1f22; border: none; border-radius: 20px; color: white; }
-        .input-panel button { padding: 8px 16px; background: #5865f2; border: none; border-radius: 20px; color: white; cursor: pointer; }
-        
-        .menu-toggle { position: fixed; bottom: 20px; left: 20px; z-index: 101; background: #5865f2; border: none; border-radius: 50%; width: 50px; height: 50px; color: white; font-size: 24px; cursor: pointer; display: none; align-items: center; justify-content: center; }
-        
-        .gif-modal { display: none; position: fixed; bottom: 80px; right: 20px; background: #2b2d31; border-radius: 12px; padding: 12px; width: 280px; flex-wrap: wrap; gap: 8px; z-index: 1000; max-height: 300px; overflow-y: auto; }
-        .gif-modal img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; }
-        
-        .login-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1e1f22; display: flex; align-items: center; justify-content: center; z-index: 10000; }
-        .login-box { background: #2b2d31; padding: 32px; border-radius: 16px; width: 90%; max-width: 400px; }
-        .login-box h1 { color: white; margin-bottom: 20px; text-align: center; }
+        .login-box { background: #2b2d31; padding: 30px; border-radius: 16px; width: 350px; text-align: center; }
+        .login-box h2 { color: white; margin-bottom: 20px; }
         .login-box input { width: 100%; padding: 12px; margin: 8px 0; background: #1e1f22; border: none; color: white; border-radius: 8px; }
-        .login-box button { width: 100%; padding: 12px; background: #5865f2; color: white; border: none; border-radius: 8px; margin-top: 8px; cursor: pointer; }
-        .login-box .register-btn { background: #23a55a; }
+        .login-box button { width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 8px; cursor: pointer; background: #5865f2; color: white; font-size: 16px; }
+        .register-btn { background: #23a55a !important; }
+        
+        .app { display: none; width: 1200px; max-width: 95%; height: 80vh; background: #2b2d31; border-radius: 16px; overflow: hidden; display: flex; }
+        .sidebar { width: 260px; background: #1e1f22; padding: 16px; overflow-y: auto; }
+        .sidebar h3 { color: #949ba4; font-size: 12px; margin-bottom: 12px; }
+        .friend-item { padding: 8px; border-radius: 8px; cursor: pointer; color: #dbdee1; margin-bottom: 4px; }
+        .friend-item:hover, .friend-item.active { background: #3a3c43; }
+        .add-friend { display: flex; gap: 8px; margin-top: 16px; }
+        .add-friend input { flex: 1; padding: 8px; background: #2b2d31; border: none; color: white; border-radius: 8px; }
+        .add-friend button { padding: 8px 12px; background: #23a55a; border: none; color: white; border-radius: 8px; cursor: pointer; }
+        
+        .chat-area { flex: 1; display: flex; flex-direction: column; }
+        .chat-header { padding: 16px; background: #2b2d31; border-bottom: 1px solid #1e1f22; color: white; }
+        .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .message { max-width: 70%; padding: 8px 12px; border-radius: 16px; }
+        .message-mine { background: #5865f2; color: white; align-self: flex-end; }
+        .message-other { background: #3a3c43; color: white; align-self: flex-start; }
+        .message-name { font-size: 11px; opacity: 0.8; margin-bottom: 4px; }
+        .message-img { max-width: 200px; border-radius: 8px; margin-top: 5px; }
+        
+        .input-area { display: flex; padding: 16px; background: #2b2d31; gap: 8px; border-top: 1px solid #1e1f22; }
+        .input-area input { flex: 1; padding: 10px; background: #1e1f22; border: none; color: white; border-radius: 20px; }
+        .input-area button { padding: 8px 16px; background: #5865f2; border: none; color: white; border-radius: 20px; cursor: pointer; }
+        .fun-btn { background: #e67e22 !important; }
+        .ai-btn { background: #9b59b6 !important; }
+        
+        .gif-panel { display: none; position: fixed; bottom: 100px; right: 20px; background: #2b2d31; padding: 12px; border-radius: 12px; width: 280px; flex-wrap: wrap; gap: 8px; max-height: 300px; overflow-y: auto; }
+        .gif-panel img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; cursor: pointer; }
     </style>
 </head>
 <body>
 
-<div id="loginContainer" class="login-container">
-    <div class="login-box">
-        <h1>Skebob Messenger</h1>
-        <input type="text" id="loginUsername" placeholder="Имя пользователя">
-        <input type="password" id="loginPassword" placeholder="Пароль">
-        <button id="doLogin">Войти</button>
-        <button id="doRegister" class="register-btn">Регистрация</button>
-    </div>
+<div id="loginContainer" class="login-box">
+    <h2>Skebob Messenger</h2>
+    <input type="text" id="loginUsername" placeholder="Имя">
+    <input type="password" id="loginPassword" placeholder="Пароль">
+    <button id="doLogin">Войти</button>
+    <button id="doRegister" class="register-btn">Регистрация</button>
 </div>
 
-<div id="app" style="display: none;">
-    <button class="menu-toggle" id="menuToggle">☰</button>
-    <div class="servers-bar" id="serversBar"></div>
-    <div class="channels-bar" id="channelsBar"></div>
-    <div class="main-chat">
-        <div class="chat-header">
-            <h2 id="chatTitle"># общий</h2>
-            <div style="display: flex; gap: 8px;">
-                <button class="action-btn gif-btn" id="gifBtn">🎬 GIF</button>
-                <button class="action-btn call-btn" id="callBtn">📞 Звонок</button>
-                <button class="action-btn ai-btn" id="aiBtn">🤖 ИИ</button>
-            </div>
+<div id="app" class="app" style="display: none;">
+    <div class="sidebar">
+        <h3>ДРУЗЬЯ</h3>
+        <div id="friendsList"></div>
+        <div class="add-friend">
+            <input type="text" id="friendName" placeholder="Имя друга">
+            <button id="addFriendBtn">➕</button>
         </div>
-        <div id="messagesArea" class="messages-area"></div>
-        <div class="input-panel">
+    </div>
+    <div class="chat-area">
+        <div class="chat-header">
+            <span id="chatTitle">Выберите друга</span>
+        </div>
+        <div id="messagesArea" class="messages"></div>
+        <div class="input-area">
             <input type="text" id="messageInput" placeholder="Сообщение..." onkeypress="if(event.key==='Enter') sendMessage()">
+            <button id="gifBtn" class="fun-btn">🎬</button>
+            <button id="aiBtn" class="ai-btn">🤖</button>
             <button id="fileBtn">📎</button>
             <button onclick="sendMessage()">💬</button>
         </div>
     </div>
 </div>
 
-<div id="gifModal" class="gif-modal"></div>
-<input type="file" id="imageInput" style="display:none">
+<div id="gifPanel" class="gif-panel"></div>
+<input type="file" id="imageFile" style="display:none">
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
     let socket;
     let currentUser = '';
-    let currentChat = { type: 'channel', serverId: 'main', channelId: 'general', name: 'общий' };
-    let servers = {};
-    let friendsList = [];
+    let currentFriend = '';
+    let friends = [];
     
-    async function loadData() {
-        const res = await fetch('/api/data');
+    // Регистрация
+    document.getElementById('doRegister').onclick = async () => {
+        const username = document.getElementById('loginUsername').value;
+        const password = document.getElementById('loginPassword').value;
+        const res = await fetch('/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
         const data = await res.json();
-        servers = data.servers || { main: { id: 'main', name: 'Skebob Community', channels: [{ id: 'general', name: 'общий', type: 'text' }] } };
-        friendsList = data.friends || [];
-        renderServers();
-        renderChannels();
-    }
-    
-    function renderServers() {
-        const container = document.getElementById('serversBar');
-        if (!container) return;
-        container.innerHTML = '';
-        for (const [id, server] of Object.entries(servers)) {
-            const div = document.createElement('div');
-            div.className = 'server-icon' + (currentChat.serverId === id ? ' active' : '');
-            div.textContent = server.name.charAt(0).toUpperCase();
-            div.onclick = () => switchServer(id);
-            container.appendChild(div);
+        alert(data.message);
+        if (data.success) {
+            document.getElementById('loginUsername').value = '';
+            document.getElementById('loginPassword').value = '';
         }
-        const addDiv = document.createElement('div');
-        addDiv.className = 'server-icon add-server';
-        addDiv.textContent = '+';
-        addDiv.onclick = () => createServer();
-        container.appendChild(addDiv);
-    }
+    };
     
-    function renderChannels() {
-        const container = document.getElementById('channelsBar');
-        if (!container) return;
-        const server = servers[currentChat.serverId];
-        if (!server) return;
-        container.innerHTML = '<div class="server-name">' + server.name + '</div>';
-        container.innerHTML += '<div class="channel-category">КАНАЛЫ</div>';
-        server.channels.forEach(ch => {
-            container.innerHTML += '<div class="channel ' + (currentChat.channelId === ch.id ? 'active' : '') + '" onclick="switchChannel(\'' + ch.id + '\', \'' + ch.name + '\')"># ' + ch.name + '</div>';
+    // Логин
+    document.getElementById('doLogin').onclick = async () => {
+        const username = document.getElementById('loginUsername').value;
+        const password = document.getElementById('loginPassword').value;
+        const res = await fetch('/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
         });
-        container.innerHTML += '<div class="channel-category">ДРУЗЬЯ</div>';
-        friendsList.forEach(friend => {
-            container.innerHTML += '<div class="friend" onclick="openDM(\'' + friend + '\')">👤 ' + friend + '</div>';
-        });
-        container.innerHTML += '<div style="margin-top:10px"><input type="text" id="friendName" placeholder="Имя друга" style="width:100%; padding:6px; border-radius:8px; background:#1e1f22; color:white; border:none"><button onclick="addFriend()" style="margin-top:5px; width:100%; background:#23a55a; border:none; padding:6px; border-radius:8px; color:white">➕ Добавить</button></div>';
-    }
-    
-    function switchServer(serverId) {
-        const server = servers[serverId];
-        if (!server || !server.channels.length) return;
-        currentChat = { type: 'channel', serverId: serverId, channelId: server.channels[0].id, name: server.channels[0].name };
-        document.getElementById('chatTitle').innerHTML = '# ' + currentChat.name;
-        loadMessages();
-        renderServers();
-        renderChannels();
-        if (window.innerWidth <= 768) document.getElementById('channelsBar').classList.remove('open');
-    }
-    
-    function switchChannel(channelId, name) {
-        currentChat = { type: 'channel', serverId: currentChat.serverId, channelId: channelId, name: name };
-        document.getElementById('chatTitle').innerHTML = '# ' + name;
-        loadMessages();
-        renderChannels();
-    }
-    
-    function openDM(username) {
-        currentChat = { type: 'dm', user: username, name: username };
-        document.getElementById('chatTitle').innerHTML = '@' + username;
-        loadMessages();
-        renderChannels();
-        if (window.innerWidth <= 768) document.getElementById('channelsBar').classList.remove('open');
-    }
-    
-    async function loadMessages() {
-        try {
-            const res = await fetch('/api/messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(currentChat)
+        const data = await res.json();
+        if (data.success) {
+            currentUser = username;
+            friends = data.friends || [];
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            
+            socket = io();
+            socket.emit('user online', currentUser);
+            
+            socket.on('private message', (msg) => {
+                if ((msg.from === currentFriend && msg.to === currentUser) || (msg.from === currentUser && msg.to === currentFriend)) {
+                    addMessage(msg);
+                }
             });
-            const messages = await res.json();
-            const area = document.getElementById('messagesArea');
-            if (!area) return;
-            area.innerHTML = '';
-            (messages || []).forEach(m => addMessage(m));
-        } catch(e) { console.error(e); }
+            
+            renderFriends();
+            document.getElementById('chatTitle').innerText = 'Выберите друга';
+        } else {
+            alert('Ошибка входа');
+        }
+    };
+    
+    function renderFriends() {
+        const container = document.getElementById('friendsList');
+        container.innerHTML = '';
+        friends.forEach(f => {
+            const div = document.createElement('div');
+            div.className = 'friend-item' + (currentFriend === f ? ' active' : '');
+            div.innerText = f;
+            div.onclick = () => openChat(f);
+            container.appendChild(div);
+        });
+    }
+    
+    async function openChat(friend) {
+        currentFriend = friend;
+        document.getElementById('chatTitle').innerText = friend;
+        renderFriends();
+        
+        const res = await fetch('/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user1: currentUser, user2: friend })
+        });
+        const messages = await res.json();
+        const area = document.getElementById('messagesArea');
+        area.innerHTML = '';
+        messages.forEach(m => addMessage(m));
     }
     
     function addMessage(msg) {
         const area = document.getElementById('messagesArea');
-        if (!area) return;
         const div = document.createElement('div');
-        div.className = 'message ' + (msg.from === currentUser ? 'message-mine' : '');
-        const time = new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        div.innerHTML = '<div class="message-content">' +
-            '<div class="message-name">' + escapeHtml(msg.from) + ' · ' + time + '</div>' +
-            '<div class="message-text">' + escapeHtml(msg.text) + '</div>' +
-            (msg.gif ? '<img src="' + msg.gif + '" style="max-width:150px; border-radius:12px; margin-top:5px">' : '') +
-            (msg.image ? '<img src="' + msg.image + '" style="max-width:150px; border-radius:12px; margin-top:5px">' : '') +
-            '</div>';
+        div.className = 'message ' + (msg.from === currentUser ? 'message-mine' : 'message-other');
+        const time = new Date(msg.time).toLocaleTimeString();
+        div.innerHTML = '<div class="message-name">' + msg.from + ' · ' + time + '</div>' +
+                       '<div>' + escapeHtml(msg.text) + '</div>' +
+                       (msg.gif ? '<img class="message-img" src="' + msg.gif + '">' : '') +
+                       (msg.image ? '<img class="message-img" src="' + msg.image + '">' : '');
         area.appendChild(div);
         div.scrollIntoView({ behavior: 'smooth' });
     }
     
     function sendMessage() {
         const input = document.getElementById('messageInput');
-        if (!input || !input.value.trim()) return;
-        socket.emit('chat message', { chat: currentChat, text: input.value, from: currentUser });
+        if (!input.value.trim() || !currentFriend) return;
+        const text = input.value;
+        socket.emit('private message', { from: currentUser, to: currentFriend, text: text });
         input.value = '';
     }
     
-    async function addFriend() {
-        const input = document.getElementById('friendName');
-        if (!input) return;
-        const name = input.value;
-        if (!name) return;
-        const res = await fetch('/api/addFriend', {
+    // Добавление друга
+    document.getElementById('addFriendBtn').onclick = async () => {
+        const friend = document.getElementById('friendName').value;
+        if (!friend) return;
+        const res = await fetch('/addFriend', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ friend: name, user: currentUser })
+            body: JSON.stringify({ user: currentUser, friend: friend })
         });
         const data = await res.json();
         if (data.success) {
-            friendsList.push(name);
-            renderChannels();
-        } else alert(data.message);
-    }
-    
-    async function createServer() {
-        const name = prompt('Название сервера:');
-        if (!name) return;
-        const res = await fetch('/api/createServer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name, owner: currentUser })
-        });
-        const data = await res.json();
-        if (data.success) {
-            servers[data.serverId] = { id: data.serverId, name: name, channels: [{ id: 'general', name: 'общий', type: 'text' }] };
-            renderServers();
+            friends.push(friend);
+            renderFriends();
+            document.getElementById('friendName').value = '';
+        } else {
+            alert(data.message);
         }
-    }
+    };
     
+    // GIF
     document.getElementById('gifBtn').onclick = async () => {
-        const modal = document.getElementById('gifModal');
-        if (modal.style.display === 'flex') { modal.style.display = 'none'; return; }
-        modal.style.display = 'flex';
+        const panel = document.getElementById('gifPanel');
+        if (panel.style.display === 'flex') { panel.style.display = 'none'; return; }
+        panel.style.display = 'flex';
         try {
             const res = await fetch('https://tenor.googleapis.com/v2/search?q=funny&key=AIzaSyC-9oUqY5G1m-Sxulx8QJqzvqQm3XqXJpE&limit=12');
             const data = await res.json();
-            modal.innerHTML = '';
-            (data.results || []).forEach(gif => {
+            panel.innerHTML = '';
+            data.results.forEach(gif => {
                 const img = document.createElement('img');
                 img.src = gif.media_formats.gif.url;
                 img.onclick = () => {
-                    socket.emit('chat message', { chat: currentChat, text: '🎬 GIF', gif: img.src, from: currentUser });
-                    modal.style.display = 'none';
+                    socket.emit('private message', { from: currentUser, to: currentFriend, text: '🎬 GIF', gif: img.src });
+                    panel.style.display = 'none';
                 };
-                modal.appendChild(img);
+                panel.appendChild(img);
             });
-        } catch(e) { modal.innerHTML = 'Ошибка загрузки GIF'; }
+        } catch(e) { panel.innerHTML = 'Ошибка'; }
     };
     
+    // ИИ
     document.getElementById('aiBtn').onclick = async () => {
         const q = prompt('🤖 Спроси у ИИ:');
         if (!q) return;
-        const res = await fetch('/api/ai', {
+        const res = await fetch('/ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question: q })
         });
         const data = await res.json();
-        addMessage({ from: '🤖 Skebob AI', text: data.answer, time: new Date() });
+        addMessage({ from: '🤖 ИИ', text: data.answer, time: new Date() });
     };
     
-    document.getElementById('callBtn').onclick = () => {
-        alert('📞 Звонок (WebRTC будет добавлен позже)');
-    };
-    
-    document.getElementById('fileBtn').onclick = () => document.getElementById('imageInput').click();
-    document.getElementById('imageInput').onchange = (e) => {
+    // Картинки
+    document.getElementById('fileBtn').onclick = () => document.getElementById('imageFile').click();
+    document.getElementById('imageFile').onchange = (e) => {
         const file = e.target.files[0];
         const reader = new FileReader();
         reader.onload = (ev) => {
-            socket.emit('chat message', { chat: currentChat, text: '📷 Изображение', image: ev.target.result, from: currentUser });
+            socket.emit('private message', { from: currentUser, to: currentFriend, text: '📷 Изображение', image: ev.target.result });
         };
         reader.readAsDataURL(file);
     };
     
-    document.getElementById('menuToggle').onclick = () => {
-        document.getElementById('channelsBar').classList.toggle('open');
-    };
-    
-    function escapeHtml(str) { return str.replace(/[&<>]/g, function(m) { if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m; }); }
-    
-    async function initApp(user) {
-        currentUser = user;
-        socket = io();
-        socket.emit('set user', currentUser);
-        socket.on('chat message', (msg) => {
-            if ((currentChat.type === 'channel' && msg.chat?.channelId === currentChat.channelId) ||
-                (currentChat.type === 'dm' && msg.chat?.user === currentChat.user)) {
-                addMessage(msg);
-            }
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
         });
-        await loadData();
-        document.getElementById('app').style.display = 'flex';
-        document.getElementById('loginContainer').style.display = 'none';
-        await loadMessages();
     }
-    
-    document.getElementById('doLogin').onclick = async () => {
-        const username = document.getElementById('loginUsername').value;
-        const password = document.getElementById('loginPassword').value;
-        const res = await fetch('/api/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-        const data = await res.json();
-        if (data.success) {
-            initApp(username);
-        } else alert('Ошибка входа');
-    };
-    
-    document.getElementById('doRegister').onclick = async () => {
-        const username = document.getElementById('loginUsername').value;
-        const password = document.getElementById('loginPassword').value;
-        const res = await fetch('/api/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-        const data = await res.json();
-        if (data.success) alert('Регистрация успешна! Теперь войдите');
-        else alert(data.message);
-    };
 </script>
 </body>
 </html>`);
 });
 
-// ============= API =============
-app.post('/api/register', (req, res) => {
+// API
+app.post('/register', (req, res) => {
   const { username, password } = req.body;
   if (users.has(username)) return res.json({ success: false, message: 'Пользователь существует' });
   users.set(username, { password, friends: [] });
-  res.json({ success: true });
+  res.json({ success: true, message: 'Регистрация успешна!' });
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const user = users.get(username);
   if (!user || user.password !== password) return res.json({ success: false });
-  res.json({ success: true });
+  res.json({ success: true, friends: user.friends || [] });
 });
 
-app.get('/api/data', (req, res) => {
-  const friends = [];
-  res.json({ servers: Object.fromEntries(servers), friends });
-});
-
-app.post('/api/addFriend', (req, res) => {
-  const { friend, user } = req.body;
+app.post('/addFriend', (req, res) => {
+  const { user, friend } = req.body;
   if (!users.has(friend)) return res.json({ success: false, message: 'Пользователь не найден' });
   const u = users.get(user);
   if (!u.friends.includes(friend)) u.friends.push(friend);
   res.json({ success: true });
 });
 
-app.post('/api/createServer', (req, res) => {
-  const { name } = req.body;
-  const id = Date.now().toString();
-  servers.set(id, { id, name, owner: 'user', channels: [{ id: 'general', name: 'общий', type: 'text' }] });
-  res.json({ success: true, serverId: id });
+app.post('/messages', (req, res) => {
+  const { user1, user2 } = req.body;
+  const key = [user1, user2].sort().join('|');
+  res.json(privateMessages.get(key) || []);
 });
 
-app.post('/api/messages', (req, res) => {
-  const key = req.body.type === 'channel' ? `channel_${req.body.serverId}_${req.body.channelId}` : `dm_${req.body.user}`;
-  res.json(messagesCache.get(key) || []);
-});
-
-app.post('/api/ai', async (req, res) => {
+app.post('/ai', async (req, res) => {
   const { question } = req.body;
   try {
     const response = await fetch('https://api.ambr.chat/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: question }],
-        max_tokens: 150
-      })
+      body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: question }], max_tokens: 150 })
     });
     const data = await response.json();
-    res.json({ answer: data.choices?.[0]?.message?.content || 'Ошибка ИИ' });
-  } catch(e) {
-    res.json({ answer: '🤖 ИИ временно недоступен' });
-  }
+    res.json({ answer: data.choices?.[0]?.message?.content || 'Ошибка' });
+  } catch(e) { res.json({ answer: 'ИИ временно недоступен' }); }
 });
 
-// ============= SOCKET.IO =============
+// Socket.IO
 io.on('connection', (socket) => {
   let currentUser = '';
-  socket.on('set user', (user) => { currentUser = user; });
-  socket.on('chat message', (msg) => {
-    const key = msg.chat.type === 'channel' ? `channel_${msg.chat.serverId}_${msg.chat.channelId}` : `dm_${msg.chat.user}`;
-    const message = { from: msg.from, text: msg.text, gif: msg.gif, image: msg.image, time: new Date() };
-    if (!messagesCache.has(key)) messagesCache.set(key, []);
-    messagesCache.get(key).push(message);
-    io.emit('chat message', { ...message, chat: msg.chat });
+  socket.on('user online', (user) => { currentUser = user; });
+  
+  socket.on('private message', (msg) => {
+    const key = [msg.from, msg.to].sort().join('|');
+    if (!privateMessages.has(key)) privateMessages.set(key, []);
+    const message = { from: msg.from, to: msg.to, text: msg.text, gif: msg.gif, image: msg.image, time: new Date() };
+    privateMessages.get(key).push(message);
+    io.emit('private message', message);
   });
 });
 
