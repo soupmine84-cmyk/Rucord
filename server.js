@@ -3,30 +3,35 @@ const app = express();
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
+
+// Настройка Socket.IO специально для Render (без WebSocket)
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   },
-  // Важно для Render - увеличиваем таймауты
+  transports: ['polling'], // Только polling! WebSocket на бесплатном Render не работает
+  allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000
 });
 
-// База данных (хранится в памяти - при перезапуске сервера всё сотрётся)
+// База данных в памяти
 const users = new Map();
 const globalMessages = [];
 const privateMessages = new Map();
 let online = 0;
 
 app.use(express.json({ limit: '50mb' }));
+app.use(express.static('public'));
 
-// Health check для Render (чтобы сервер не засыпал)
+// Health check для Render
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// HTML страница
+// Главная страница
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -42,9 +47,9 @@ app.get('/', (req, res) => {
         .login-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .login-box { background: #2b2d31; padding: 30px; border-radius: 20px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
         .login-box h1 { color: white; margin-bottom: 10px; }
-        .login-box p { color: #949ba4; margin-bottom: 20px; font-size: 14px; }
-        .login-box input { width: 100%; padding: 12px; margin: 10px 0; background: #1e1f22; border: none; color: white; border-radius: 8px; font-size: 16px; }
-        .login-box input:focus { outline: none; border: 1px solid #5865f2; }
+        .login-box p { color: #949ba4; margin-bottom: 20px; }
+        .login-box input { width: 100%; padding: 12px; margin: 10px 0; background: #1e1f22; border: 1px solid #3a3c43; color: white; border-radius: 8px; font-size: 16px; }
+        .login-box input:focus { outline: none; border-color: #5865f2; }
         .login-box button { width: 100%; padding: 12px; margin: 10px 0; border: none; border-radius: 8px; cursor: pointer; background: #5865f2; color: white; font-size: 16px; font-weight: bold; transition: 0.2s; }
         .login-box button:hover { opacity: 0.9; transform: scale(1.02); }
         .register { background: #23a55a !important; }
@@ -57,10 +62,7 @@ app.get('/', (req, res) => {
         .chat-header h2 { color: white; font-size: 18px; }
         .messages-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
         .message { display: flex; gap: 10px; animation: fadeIn 0.3s; }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .message-mine { flex-direction: row-reverse; }
         .message-avatar { width: 40px; height: 40px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; flex-shrink: 0; }
         .message-content { max-width: 70%; }
@@ -68,13 +70,11 @@ app.get('/', (req, res) => {
         .message-text { background: #2b2d31; padding: 8px 12px; border-radius: 15px; color: white; word-wrap: break-word; }
         .message-mine .message-text { background: #5865f2; }
         .message-time { font-size: 10px; color: #949ba4; margin-top: 5px; display: block; }
-        .message-img { max-width: 200px; border-radius: 10px; margin-top: 5px; cursor: pointer; }
         
         .input-panel { padding: 15px; background: #2b2d31; display: flex; gap: 10px; border-top: 1px solid #1e1f22; }
         .input-panel input { flex: 1; padding: 12px; background: #1e1f22; border: none; color: white; border-radius: 25px; font-size: 14px; }
         .input-panel input:focus { outline: none; }
         .input-panel button { padding: 10px 20px; background: #5865f2; border: none; color: white; border-radius: 25px; cursor: pointer; font-weight: bold; }
-        .input-panel button:hover { opacity: 0.9; }
         
         .action-btn { padding: 8px 15px; margin: 0 5px; border: none; border-radius: 20px; cursor: pointer; color: white; font-weight: bold; transition: 0.2s; }
         .action-btn:hover { transform: scale(1.05); }
@@ -93,14 +93,9 @@ app.get('/', (req, res) => {
         .friend { padding: 12px; margin: 8px 0; background: #1e1f22; border-radius: 10px; cursor: pointer; color: white; transition: 0.2s; }
         .friend:hover { background: #5865f2; transform: translateX(5px); }
         .friend.active { background: #5865f2; }
-        
         .online-count { font-size: 12px; color: #949ba4; margin-top: 10px; }
         
-        .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #2b2d31; color: white; padding: 10px 20px; border-radius: 25px; z-index: 9999; animation: fadeIn 0.3s; pointer-events: none; white-space: nowrap; }
-        
-        .connection-status { position: fixed; top: 10px; right: 10px; padding: 5px 10px; border-radius: 20px; font-size: 12px; z-index: 1000; }
-        .connected { background: #23a55a; color: white; }
-        .disconnected { background: #e74c3c; color: white; }
+        .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #2b2d31; color: white; padding: 10px 20px; border-radius: 25px; z-index: 9999; animation: fadeIn 0.3s; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -146,19 +141,15 @@ app.get('/', (req, res) => {
 </div>
 
 <button class="menu-toggle" id="menuToggle">☰</button>
-<div id="connectionStatus" class="connection-status disconnected">🔌 Подключение...</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-    // ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==========
     let socket = null;
     let currentUser = '';
     let currentChat = 'global';
     let currentFriend = null;
     let friends = [];
-    let reconnectAttempts = 0;
     
-    // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
     function showToast(msg) {
         let toast = document.createElement('div');
         toast.className = 'toast';
@@ -177,17 +168,6 @@ app.get('/', (req, res) => {
         });
     }
     
-    function updateConnectionStatus(connected) {
-        let statusDiv = document.getElementById('connectionStatus');
-        if (connected) {
-            statusDiv.className = 'connection-status connected';
-            statusDiv.innerHTML = '🟢 Подключено';
-        } else {
-            statusDiv.className = 'connection-status disconnected';
-            statusDiv.innerHTML = '🔴 Отключено';
-        }
-    }
-    
     function addMessageToUI(msg) {
         let area = document.getElementById('messagesArea');
         let div = document.createElement('div');
@@ -199,7 +179,7 @@ app.get('/', (req, res) => {
             '<div class="message-content">' +
                 '<span class="message-name">' + escapeHtml(msg.from) + '</span>' +
                 '<div class="message-text">' + (msg.text ? escapeHtml(msg.text) : '') + '</div>' +
-                (msg.gif ? '<img class="message-img" src="' + escapeHtml(msg.gif) + '" onclick="window.open(this.src)">' : '') +
+                (msg.gif ? '<img src="' + escapeHtml(msg.gif) + '" style="max-width:200px; border-radius:10px; margin-top:5px; cursor:pointer;" onclick="window.open(this.src)">' : '') +
                 '<span class="message-time">' + time + '</span>' +
             '</div>';
         
@@ -207,15 +187,14 @@ app.get('/', (req, res) => {
         div.scrollIntoView({ behavior: 'smooth' });
     }
     
-    // ========== ОСНОВНЫЕ ФУНКЦИИ ЧАТА ==========
     function sendMessage() {
         let input = document.getElementById('messageInput');
         let text = input.value.trim();
         
         if (!text) return;
         
-        if (!socket || !socket.connected) {
-            showToast('❌ Нет подключения к серверу!');
+        if (!socket) {
+            showToast('❌ Нет подключения к серверу');
             return;
         }
         
@@ -264,7 +243,6 @@ app.get('/', (req, res) => {
         }
     }
     
-    // ========== ФУНКЦИИ НАВИГАЦИИ ==========
     window.openGlobalChat = function() {
         currentChat = 'global';
         currentFriend = null;
@@ -287,7 +265,6 @@ app.get('/', (req, res) => {
         }
     };
     
-    // ========== ОТРИСОВКА СПИСКА ДРУЗЕЙ ==========
     function renderFriends() {
         let container = document.getElementById('friendsList');
         if (!container) return;
@@ -297,54 +274,40 @@ app.get('/', (req, res) => {
         
         friends.forEach(friend => {
             let activeClass = (currentChat === 'private' && currentFriend === friend) ? 'active' : '';
-            html += '<div class="friend ' + activeClass + '" onclick="openPrivateChat(\'' + friend + '\')">👤 ' + escapeHtml(friend) + '</div>';
+            html += '<div class="friend ' + activeClass + '" onclick="openPrivateChat(\\'' + friend + '\\')">👤 ' + escapeHtml(friend) + '</div>';
         });
         
         container.innerHTML = html;
     }
     
-    // ========== ОБНОВЛЕНИЕ ОНЛАЙНА ==========
     function updateOnlineCount(count) {
         let onlineSpan = document.getElementById('onlineCount');
         if (onlineSpan) onlineSpan.innerHTML = '👥 Онлайн: ' + count;
     }
     
-    // ========== ИНИЦИАЛИЗАЦИЯ СОКЕТОВ (специально для Render) ==========
     function initSocket() {
-        // Получаем текущий URL страницы
-        const socketUrl = window.location.origin;
-        
-        socket = io(socketUrl, {
-            transports: ['websocket', 'polling'], // Важно для Render
+        // Важно: используем transport: 'polling' для Render
+        socket = io({
+            transports: ['polling'],
             reconnection: true,
-            reconnectionAttempts: Infinity,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000
+            reconnectionAttempts: 10,
+            reconnectionDelay: 1000
         });
         
         socket.on('connect', () => {
-            console.log('✅ Socket подключен');
-            updateConnectionStatus(true);
+            console.log('✅ Socket подключен через polling');
+            showToast('✅ Подключено к серверу');
             socket.emit('user online', currentUser);
-            reconnectAttempts = 0;
         });
         
         socket.on('connect_error', (error) => {
             console.log('❌ Ошибка подключения:', error);
-            updateConnectionStatus(false);
+            showToast('⚠️ Ошибка подключения, переподключение...');
         });
         
-        socket.on('disconnect', (reason) => {
-            console.log('🔌 Socket отключен:', reason);
-            updateConnectionStatus(false);
-            showToast('⚠️ Потеряно соединение с сервером, переподключение...');
-        });
-        
-        socket.on('reconnect', (attemptNumber) => {
-            console.log('🔄 Переподключен после', attemptNumber, 'попыток');
-            updateConnectionStatus(true);
-            socket.emit('user online', currentUser);
-            showToast('✅ Соединение восстановлено!');
+        socket.on('disconnect', () => {
+            console.log('🔌 Socket отключен');
+            showToast('⚠️ Потеряно соединение');
         });
         
         socket.on('global message', (msg) => {
@@ -358,7 +321,7 @@ app.get('/', (req, res) => {
                 addMessageToUI(msg);
             }
             if (msg.from !== currentUser) {
-                showToast('📩 Новое сообщение от ' + msg.from);
+                showToast('📩 Сообщение от ' + msg.from);
             }
         });
         
@@ -367,18 +330,13 @@ app.get('/', (req, res) => {
         });
     }
     
-    // ========== ОБРАБОТЧИКИ КНОПОК ==========
+    // Регистрация
     document.getElementById('registerBtn').onclick = async () => {
         let username = document.getElementById('username').value.trim();
         let password = document.getElementById('password').value.trim();
         
         if (!username || !password) {
             showToast('❌ Заполните все поля!');
-            return;
-        }
-        
-        if (username.length < 3) {
-            showToast('❌ Имя должно быть минимум 3 символа');
             return;
         }
         
@@ -395,10 +353,11 @@ app.get('/', (req, res) => {
                 document.getElementById('password').value = '';
             }
         } catch(e) {
-            showToast('❌ Ошибка соединения с сервером');
+            showToast('❌ Ошибка соединения');
         }
     };
     
+    // Вход
     document.getElementById('loginBtn').onclick = async () => {
         let username = document.getElementById('username').value.trim();
         let password = document.getElementById('password').value.trim();
@@ -420,23 +379,18 @@ app.get('/', (req, res) => {
                 currentUser = username;
                 friends = data.friends || [];
                 
-                // Скрываем логин и показываем чат
                 document.getElementById('loginScreen').style.display = 'none';
                 document.getElementById('app').style.display = 'flex';
                 
-                // Инициализируем сокет
                 initSocket();
-                
-                // Загружаем историю и отрисовываем друзей
                 await loadGlobalMessages();
                 renderFriends();
-                
-                showToast('✅ Добро пожаловать, ' + username + '!');
+                showToast('✅ Добро пожаловать, ' + username);
             } else {
                 showToast('❌ Неверный логин или пароль');
             }
         } catch(e) {
-            showToast('❌ Ошибка соединения с сервером');
+            showToast('❌ Ошибка соединения');
         }
     };
     
@@ -452,7 +406,7 @@ app.get('/', (req, res) => {
             return;
         }
         if (friend === currentUser) {
-            showToast('❌ Нельзя добавить самого себя!');
+            showToast('❌ Нельзя добавить себя');
             return;
         }
         
@@ -476,34 +430,23 @@ app.get('/', (req, res) => {
     };
     
     document.getElementById('gifBtn').onclick = () => {
-        let gifUrl = prompt('🎬 Введите URL GIF (можно найти на giphy.com):\nПример: https://media.giphy.com/media/...');
-        if (gifUrl && gifUrl.trim()) {
-            if (!socket || !socket.connected) {
-                showToast('❌ Нет подключения к серверу!');
-                return;
-            }
+        let gifUrl = prompt('🎬 Введите URL GIF:');
+        if (gifUrl && gifUrl.trim() && socket) {
             if (currentChat === 'global') {
-                socket.emit('global message', { from: currentUser, text: '🎬 Отправил GIF', gif: gifUrl });
+                socket.emit('global message', { from: currentUser, text: '🎬 GIF', gif: gifUrl });
             } else {
-                socket.emit('private message', { from: currentUser, to: currentFriend, text: '🎬 Отправил GIF', gif: gifUrl });
+                socket.emit('private message', { from: currentUser, to: currentFriend, text: '🎬 GIF', gif: gifUrl });
             }
         }
     };
     
     document.getElementById('aiBtn').onclick = () => {
-        let question = prompt('🤖 Спроси у ИИ помощника:');
+        let question = prompt('🤖 Спроси у ИИ:');
         if (question && question.trim()) {
-            let answers = [
-                '42 — ответ на любой вопрос! 🎯',
-                'Я еще маленький ИИ, но учусь! 😊',
-                'Спроси что-нибудь попроще 🧠',
-                'Похоже на баг, перезагрузи мозги! 🔄',
-                'Ты очень умный человек! 👍',
-                'Хороший вопрос! Ответ: возможно 😄'
-            ];
+            let answers = ['42 — ответ на всё!', 'Я маленький ИИ :)', 'Хороший вопрос!', 'Возможно, да!', 'Спроси позже'];
             let answer = answers[Math.floor(Math.random() * answers.length)];
             setTimeout(() => {
-                addMessageToUI({ from: '🤖 ИИ', text: '❓ ' + question + '\n\n💡 ' + answer, time: new Date() });
+                addMessageToUI({ from: '🤖 ИИ', text: answer, time: new Date() });
             }, 300);
         }
     };
@@ -517,16 +460,12 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ========== API ОБРАБОТЧИКИ ==========
+// API обработчики
 app.post('/register', (req, res) => {
   const { username, password } = req.body;
   
-  if (!username || !password) {
-    return res.json({ success: false, message: '❌ Заполните все поля' });
-  }
-  
   if (users.has(username)) {
-    return res.json({ success: false, message: '❌ Пользователь уже существует' });
+    return res.json({ success: false, message: '❌ Пользователь существует' });
   }
   
   users.set(username, { password, friends: [] });
@@ -560,7 +499,6 @@ app.post('/addFriend', (req, res) => {
   
   userData.friends.push(friend);
   users.set(user, userData);
-  console.log('✅', user, 'добавил друга', friend);
   res.json({ success: true, message: '✅ Друг добавлен!' });
 });
 
@@ -575,7 +513,7 @@ app.post('/privateMessages', (req, res) => {
   res.json(messages);
 });
 
-// ========== SOCKET.IO ==========
+// Socket.IO
 io.on('connection', (socket) => {
   let currentUser = null;
   
@@ -583,7 +521,7 @@ io.on('connection', (socket) => {
     currentUser = username;
     online++;
     io.emit('online count', online);
-    console.log(`🟢 ${username} подключился | Онлайн: ${online}`);
+    console.log(`🟢 ${username} онлайн | Всего: ${online}`);
   });
   
   socket.on('global message', (msg) => {
@@ -591,7 +529,7 @@ io.on('connection', (socket) => {
     globalMessages.push(message);
     if (globalMessages.length > 100) globalMessages.shift();
     io.emit('global message', message);
-    console.log(`💬 Глобал [${msg.from}]: ${msg.text}`);
+    console.log(`💬 ${msg.from}: ${msg.text}`);
   });
   
   socket.on('private message', (msg) => {
@@ -606,8 +544,7 @@ io.on('connection', (socket) => {
     if (privateMessages.get(key).length > 50) privateMessages.get(key).shift();
     
     // Отправляем получателю
-    const clients = io.sockets.sockets;
-    for (let [id, client] of clients) {
+    for (let [id, client] of io.sockets.sockets) {
       if (client.currentUser === msg.to) {
         client.emit('private message', message);
         break;
@@ -615,23 +552,23 @@ io.on('connection', (socket) => {
     }
     
     socket.emit('private message', message);
-    console.log(`💌 ЛС [${msg.from} -> ${msg.to}]: ${msg.text}`);
+    console.log(`💌 ${msg.from} -> ${msg.to}: ${msg.text}`);
   });
   
   socket.on('disconnect', () => {
     if (currentUser) {
       online--;
       io.emit('online count', online);
-      console.log(`🔴 ${currentUser} отключился | Онлайн: ${online}`);
+      console.log(`🔴 ${currentUser} отключился | Всего: ${online}`);
     }
   });
 });
 
-// ========== ЗАПУСК СЕРВЕРА ==========
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n╔════════════════════════════════════╗`);
-  console.log(`║     ✅ Skebob Messenger запущен     ║`);
-  console.log(`║     🚀 Работает на Render.com       ║`);
-  console.log(`╚════════════════════════════════════╝\n`);
+  console.log(`\n╔════════════════════════════════════════╗`);
+  console.log(`║     ✅ Skebob Messenger запущен         ║`);
+  console.log(`║     🚀 Режим: polling (для Render)      ║`);
+  console.log(`║     📡 Порт: ${PORT}                      ║`);
+  console.log(`╚════════════════════════════════════════╝\n`);
 });
