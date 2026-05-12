@@ -11,7 +11,6 @@ const globalMessages = [];
 const privateMessages = new Map();
 let online = 0;
 
-// Прикольные ответы
 const funnyResponses = [
     "🤖 Я бы ответил, но меня отвлекли мемы с котиками... ",
     "🎲 Выпало число 42, это ответ на твой вопрос! ",
@@ -228,6 +227,104 @@ app.get('/', (req, res) => {
     
     function escapeHtml(str) { return str.replace(/[&<>]/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
     
+    // ==== ГЛОБАЛЬНЫЕ ФУНКЦИИ (объявлены ДО их использования) ====
+    async function openGlobalChat() {
+        currentChat = { type: 'global', name: 'Общий чат' };
+        document.getElementById('chatTitle').innerHTML = '# Общий чат';
+        renderFriends();
+        await loadGlobalMessages();
+        if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
+    }
+    
+    async function openPrivateChat(friend) {
+        currentChat = { type: 'private', name: friend };
+        document.getElementById('chatTitle').innerHTML = '@' + friend;
+        renderFriends();
+        let res = await fetch('/privateMessages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user1: currentUser, user2: friend })
+        });
+        let messages = await res.json();
+        let area = document.getElementById('messagesArea');
+        area.innerHTML = '';
+        messages.forEach(m => addMessage(m));
+        if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
+    }
+    
+    function renderFriends() {
+        let container = document.getElementById('friendsList');
+        if (!container) return;
+        container.innerHTML = '<div class="friend ' + (currentChat.type === 'global' ? 'active' : '') + '" onclick="openGlobalChat()"><div class="friend-avatar">🌍</div><div class="friend-info"><div class="friend-name">Общий чат</div><div class="friend-status">Все пользователи</div></div></div>';
+        friends.forEach(f => {
+            let div = document.createElement('div');
+            div.className = 'friend ' + (currentChat.type === 'private' && currentChat.name === f ? 'active' : '');
+            div.innerHTML = '<div class="friend-avatar">👤</div><div class="friend-info"><div class="friend-name">' + escapeHtml(f) + '</div><div class="friend-status">Нажми для чата</div></div>';
+            div.onclick = () => openPrivateChat(f);
+            container.appendChild(div);
+        });
+    }
+    
+    async function loadGlobalMessages() {
+        let res = await fetch('/globalMessages');
+        let messages = await res.json();
+        let area = document.getElementById('messagesArea');
+        area.innerHTML = '';
+        messages.forEach(m => addMessage(m));
+    }
+    
+    function addMessage(msg) {
+        let area = document.getElementById('messagesArea');
+        let div = document.createElement('div');
+        div.className = 'message ' + (msg.from === currentUser ? 'message-mine' : '');
+        let time = new Date(msg.time).toLocaleTimeString();
+        div.innerHTML = '<div class="message-avatar" onclick="showUserInfo(\'' + escapeHtml(msg.from) + '\')">' + (msg.from[0] || '?') + '</div>' +
+            '<div class="message-content">' +
+            '<div class="message-header">' +
+            '<span class="message-name" onclick="showUserInfo(\'' + escapeHtml(msg.from) + '\')">' + escapeHtml(msg.from) + '</span>' +
+            '<span class="message-time">' + time + '</span>' +
+            '</div>' +
+            '<div class="message-text">' + (msg.text ? escapeHtml(msg.text) : '') + '</div>' +
+            (msg.gif ? '<img class="message-img" src="' + msg.gif + '" onclick="window.open(this.src)">' : '') +
+            (msg.image ? '<img class="message-img" src="' + msg.image + '" onclick="window.open(this.src)">' : '') +
+            (msg.sticker ? '<div style="font-size:48px; margin-top:5px;">' + msg.sticker + '</div>' : '') +
+            '</div>';
+        area.appendChild(div);
+        div.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function showUserInfo(username) {
+        if (username === currentUser) showToast('Это ты! 🤪');
+        else showToast('👤 ' + username);
+    }
+    
+    function sendMessage() {
+        let input = document.getElementById('messageInput');
+        let text = input.value.trim();
+        if (!text) return;
+        
+        if (text.startsWith('/')) {
+            let parts = text.split(' ');
+            let cmd = parts[0].toLowerCase();
+            if (slashCommands[cmd]) {
+                let resp = typeof slashCommands[cmd] === 'function' ? slashCommands[cmd](parts.slice(1).join(' ')) : slashCommands[cmd];
+                addMessage({ from: '🤖 БОТ', text: resp, time: new Date() });
+                input.value = '';
+                return;
+            } else { showToast('Неизвестная команда. /help'); input.value = ''; return; }
+        }
+        
+        if (drunkMode && Math.random() > 0.7) {
+            let drunk = ['Я тебя лю... блин...', 'Ааааа', 'Кто здесь?', 'Пивааа!', 'Где мои тапки?'];
+            text = drunk[Math.floor(Math.random()*drunk.length)];
+        }
+        
+        if (currentChat.type === 'global') socket.emit('global message', { from: currentUser, text: text });
+        else socket.emit('private message', { from: currentUser, to: currentChat.name, text: text });
+        input.value = '';
+    }
+    
+    // ==== ОБРАБОТЧИКИ КНОПОК ====
     document.querySelectorAll('.device-btn').forEach(btn => {
         btn.onclick = () => {
             document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('selected'));
@@ -281,101 +378,6 @@ app.get('/', (req, res) => {
             loadGlobalMessages();
             showToast('Добро пожаловать, ' + user);
         } else { showToast('Ошибка входа'); }
-    };
-    
-    function renderFriends() {
-        let container = document.getElementById('friendsList');
-        container.innerHTML = '<div class="friend ' + (currentChat.type === 'global' ? 'active' : '') + '" onclick="openGlobalChat()"><div class="friend-avatar">🌍</div><div class="friend-info"><div class="friend-name">Общий чат</div><div class="friend-status">Все пользователи</div></div></div>';
-        friends.forEach(f => {
-            let div = document.createElement('div');
-            div.className = 'friend ' + (currentChat.type === 'private' && currentChat.name === f ? 'active' : '');
-            div.innerHTML = '<div class="friend-avatar">👤</div><div class="friend-info"><div class="friend-name">' + escapeHtml(f) + '</div><div class="friend-status">Нажми для чата</div></div>';
-            div.onclick = () => openPrivateChat(f);
-            container.appendChild(div);
-        });
-    }
-    
-    window.openGlobalChat = async function() {
-        currentChat = { type: 'global', name: 'Общий чат' };
-        document.getElementById('chatTitle').innerHTML = '# Общий чат';
-        renderFriends();
-        await loadGlobalMessages();
-        if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
-    };
-    
-    window.openPrivateChat = async function(friend) {
-        currentChat = { type: 'private', name: friend };
-        document.getElementById('chatTitle').innerHTML = '@' + friend;
-        renderFriends();
-        let res = await fetch('/privateMessages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user1: currentUser, user2: friend })
-        });
-        let messages = await res.json();
-        let area = document.getElementById('messagesArea');
-        area.innerHTML = '';
-        messages.forEach(m => addMessage(m));
-        if (window.innerWidth <= 768) document.getElementById('sidebar').classList.remove('open');
-    };
-    
-    async function loadGlobalMessages() {
-        let res = await fetch('/globalMessages');
-        let messages = await res.json();
-        let area = document.getElementById('messagesArea');
-        area.innerHTML = '';
-        messages.forEach(m => addMessage(m));
-    }
-    
-    function addMessage(msg) {
-        let area = document.getElementById('messagesArea');
-        let div = document.createElement('div');
-        div.className = 'message ' + (msg.from === currentUser ? 'message-mine' : '');
-        let time = new Date(msg.time).toLocaleTimeString();
-        div.innerHTML = '<div class="message-avatar" onclick="showUserInfo(\'' + escapeHtml(msg.from) + '\')">' + (msg.from[0] || '?') + '</div>' +
-            '<div class="message-content">' +
-            '<div class="message-header">' +
-            '<span class="message-name" onclick="showUserInfo(\'' + escapeHtml(msg.from) + '\')">' + escapeHtml(msg.from) + '</span>' +
-            '<span class="message-time">' + time + '</span>' +
-            '</div>' +
-            '<div class="message-text">' + (msg.text ? escapeHtml(msg.text) : '') + '</div>' +
-            (msg.gif ? '<img class="message-img" src="' + msg.gif + '" onclick="window.open(this.src)">' : '') +
-            (msg.image ? '<img class="message-img" src="' + msg.image + '" onclick="window.open(this.src)">' : '') +
-            (msg.sticker ? '<div style="font-size:48px; margin-top:5px;">' + msg.sticker + '</div>' : '') +
-            '</div>';
-        area.appendChild(div);
-        div.scrollIntoView({ behavior: 'smooth' });
-    }
-    
-    window.showUserInfo = function(username) {
-        if (username === currentUser) showToast('Это ты! 🤪');
-        else showToast('👤 ' + username);
-    };
-    
-    window.sendMessage = function() {
-        let input = document.getElementById('messageInput');
-        let text = input.value.trim();
-        if (!text) return;
-        
-        if (text.startsWith('/')) {
-            let parts = text.split(' ');
-            let cmd = parts[0].toLowerCase();
-            if (slashCommands[cmd]) {
-                let resp = typeof slashCommands[cmd] === 'function' ? slashCommands[cmd](parts.slice(1).join(' ')) : slashCommands[cmd];
-                addMessage({ from: '🤖 БОТ', text: resp, time: new Date() });
-                input.value = '';
-                return;
-            } else { showToast('Неизвестная команда. /help'); input.value = ''; return; }
-        }
-        
-        if (drunkMode && Math.random() > 0.7) {
-            let drunk = ['Я тебя лю... блин...', 'Ааааа', 'Кто здесь?', 'Пивааа!', 'Где мои тапки?'];
-            text = drunk[Math.floor(Math.random()*drunk.length)];
-        }
-        
-        if (currentChat.type === 'global') socket.emit('global message', { from: currentUser, text: text });
-        else socket.emit('private message', { from: currentUser, to: currentChat.name, text: text });
-        input.value = '';
     };
     
     document.getElementById('sendBtn').onclick = () => sendMessage();
@@ -496,7 +498,7 @@ app.get('/', (req, res) => {
 </html>`);
 });
 
-// API
+// API (без изменений, работает)
 app.post('/register', (req, res) => {
   const { username, password, device } = req.body;
   if (users.has(username)) return res.json({ success: false, message: '❌ Пользователь существует' });
