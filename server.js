@@ -6,8 +6,7 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
-const Database = require("better-sqlite3");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { OpenAI } = require("openai");
 
@@ -23,55 +22,22 @@ if (!fs.existsSync("uploads")) {
 
 app.use("/uploads", express.static("uploads"));
 
-// SQLITE
-const db = new Database("rucord.db");
-
-db.prepare(`
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT UNIQUE,
-  password TEXT,
-  role TEXT DEFAULT 'user'
-)
-`).run();
-
-db.prepare(`
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT,
-  text TEXT
-)
-`).run();
-
-// FILES
-const storage = multer.diskStorage({
-  destination: "uploads/",
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "_" + file.originalname);
-  }
+const upload = multer({
+  dest: "uploads/"
 });
 
-const upload = multer({ storage });
-
-// OPENAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-// SOCKET.IO
 const io = new Server(server, {
   cors: {
     origin: "*"
   }
 });
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 let users = {};
-let groups = {};
-let channels = {
-  general: [],
-  memes: [],
-  gaming: []
-};
+let accounts = [];
 
 // FRONTEND
 app.get("/", (req, res) => {
@@ -97,14 +63,13 @@ color:white;
 font-family:Arial;
 display:flex;
 height:100vh;
-overflow:hidden;
 }
 
 #sidebar{
 width:260px;
 background:#2f3136;
 padding:10px;
-overflow-y:auto;
+overflow:auto;
 }
 
 #chat{
@@ -115,7 +80,7 @@ flex-direction:column;
 
 #messages{
 flex:1;
-overflow-y:auto;
+overflow:auto;
 padding:20px;
 }
 
@@ -124,12 +89,11 @@ background:#36393f;
 padding:10px;
 border-radius:10px;
 margin-bottom:10px;
-word-break:break-word;
 }
 
 #bottom{
-background:#40444b;
 padding:10px;
+background:#40444b;
 }
 
 input,button{
@@ -139,19 +103,8 @@ border-radius:8px;
 margin:2px;
 }
 
-button{
-cursor:pointer;
-}
-
-.user{
-background:#40444b;
-padding:8px;
-border-radius:8px;
-margin-bottom:5px;
-}
-
 video{
-width:220px;
+width:200px;
 border-radius:10px;
 margin-top:10px;
 }
@@ -179,29 +132,16 @@ height:250px;
 
 <h2>Rucord</h2>
 
-<h3>Register</h3>
-
-<input id="regUser"
+<input id="username"
 placeholder="username">
 
-<input id="regPass"
+<input id="password"
 type="password"
 placeholder="password">
 
 <button onclick="register()">
 Register
 </button>
-
-<hr>
-
-<h3>Login</h3>
-
-<input id="loginUser"
-placeholder="username">
-
-<input id="loginPass"
-type="password"
-placeholder="password">
 
 <button onclick="login()">
 Login
@@ -215,35 +155,6 @@ Login
 
 <hr>
 
-<h3>Channels</h3>
-
-<button onclick="joinChannel('general')">
-# general
-</button>
-
-<button onclick="joinChannel('gaming')">
-# gaming
-</button>
-
-<button onclick="joinChannel('memes')">
-# memes
-</button>
-
-<hr>
-
-<h3>Private</h3>
-
-<input id="privateId"
-placeholder="socket id">
-
-<button onclick="sendPrivate()">
-Send PM
-</button>
-
-<hr>
-
-<h3>Calls</h3>
-
 <input id="callId"
 placeholder="socket id">
 
@@ -255,27 +166,13 @@ Call
 Screen
 </button>
 
-<video id="localVideo"
+<video id="video"
 autoplay muted></video>
 
 <hr>
 
-<h3>Voice</h3>
-
-<button onclick="startRecord()">
-🎤 Start
-</button>
-
-<button onclick="stopRecord()">
-⏹ Stop
-</button>
-
-<hr>
-
-<h3>Upload</h3>
-
 <input type="file"
-id="fileInput">
+id="file">
 
 <button onclick="uploadFile()">
 Upload
@@ -289,7 +186,7 @@ Upload
 
 <div id="bottom">
 
-<input id="messageInput"
+<input id="message"
 placeholder="message..."
 style="width:60%">
 
@@ -311,8 +208,6 @@ AI
 
 const socket = io();
 
-let currentChannel = "general";
-
 const messages =
 document.getElementById("messages");
 
@@ -320,10 +215,10 @@ document.getElementById("messages");
 async function register(){
 
 const username =
-document.getElementById("regUser").value;
+document.getElementById("username").value;
 
 const password =
-document.getElementById("regPass").value;
+document.getElementById("password").value;
 
 await fetch("/register",{
 method:"POST",
@@ -344,154 +239,90 @@ alert("registered");
 async function login(){
 
 const username =
-document.getElementById("loginUser").value;
-
-const password =
-document.getElementById("loginPass").value;
-
-const res = await fetch("/login",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-username,
-password
-})
-});
-
-const data = await res.json();
-
-localStorage.setItem(
-"token",
-data.token
-);
+document.getElementById("username").value;
 
 socket.emit(
 "join",
-data.username
+username
 );
 
 addMessage(
-"✅ Logged in as " +
-data.username
+"✅ logged in"
 );
 
 }
-
-// USERS
-socket.on("users",(users)=>{
-
-const usersDiv =
-document.getElementById("users");
-
-usersDiv.innerHTML = "";
-
-for(let id in users){
-
-usersDiv.innerHTML += \`
-<div class="user">
-\${users[id]}
-<br>
-<small>\${id}</small>
-</div>
-\`;
-
-}
-
-});
 
 // SEND
 function sendMessage(){
 
 const input =
-document.getElementById("messageInput");
+document.getElementById("message");
 
 socket.emit(
-"channel_message",
-{
-channel:currentChannel,
-message:input.value
-}
+"message",
+input.value
 );
 
 input.value = "";
 
 }
 
-// RECEIVE
 socket.on(
-"channel_message",
+"message",
 (data)=>{
 
 addMessage(
-\`#\${data.channel}
-<b>\${data.username}</b>:
-\${data.message}\`
+"<b>" +
+data.user +
+"</b>: " +
+data.text
 );
 
 }
 );
 
-// PRIVATE
-function sendPrivate(){
-
-const id =
-document.getElementById("privateId").value;
-
-const message =
-document.getElementById("messageInput").value;
-
-socket.emit(
-"private_message",
-{
-to:id,
-message
-}
-);
-
-}
-
+// USERS
 socket.on(
-"private_message",
+"users",
 (data)=>{
 
-addMessage(
-\`🔒
-<b>\${data.username}</b>:
-\${data.message}\`
-);
+const usersDiv =
+document.getElementById("users");
+
+usersDiv.innerHTML = "";
+
+for(let id in data){
+
+usersDiv.innerHTML +=
+"<div>" +
+data[id] +
+"<br><small>" +
+id +
+"</small></div><hr>";
+
+}
 
 }
 );
-
-// CHANNEL
-function joinChannel(channel){
-
-currentChannel = channel;
-
-addMessage(
-"Joined #" + channel
-);
-
-}
 
 // SYSTEM
-socket.on("system",(msg)=>{
+socket.on(
+"system",
+(msg)=>{
 
 addMessage(
 "⚡ " + msg
 );
 
-});
+}
+);
 
 function addMessage(text){
 
-messages.innerHTML += \`
-<div class="msg">
-\${text}
-</div>
-\`;
+messages.innerHTML +=
+'<div class="msg">' +
+text +
+'</div>';
 
 messages.scrollTop =
 messages.scrollHeight;
@@ -501,16 +332,17 @@ messages.scrollHeight;
 // AI
 async function askAI(){
 
-const input =
-document.getElementById("messageInput");
+const msg =
+document.getElementById("message").value;
 
-const res = await fetch("/ai",{
+const res =
+await fetch("/ai",{
 method:"POST",
 headers:{
 "Content-Type":"application/json"
 },
 body:JSON.stringify({
-message:input.value
+message:msg
 })
 });
 
@@ -518,12 +350,13 @@ const data =
 await res.json();
 
 addMessage(
-"🤖 " + data.response
+"🤖 " +
+data.response
 );
 
 }
 
-// CALL
+// VIDEO
 async function callUser(){
 
 const target =
@@ -543,7 +376,7 @@ audio:true
 });
 
 document.getElementById(
-"localVideo"
+"video"
 ).srcObject = stream;
 
 }
@@ -561,7 +394,7 @@ audio:true
 });
 
 document.getElementById(
-"localVideo"
+"video"
 ).srcObject = stream;
 
 }
@@ -570,73 +403,22 @@ document.getElementById(
 // SCREEN SHARE
 async function shareScreen(){
 
-const screen =
+const stream =
 await navigator.mediaDevices.getDisplayMedia({
 video:true
 });
 
 document.getElementById(
-"localVideo"
-).srcObject = screen;
+"video"
+).srcObject = stream;
 
 }
 
-// VOICE MESSAGE
-let mediaRecorder;
-let audioChunks = [];
-
-async function startRecord(){
-
-const stream =
-await navigator.mediaDevices.getUserMedia({
-audio:true
-});
-
-mediaRecorder =
-new MediaRecorder(stream);
-
-mediaRecorder.start();
-
-mediaRecorder.ondataavailable =
-(e)=>{
-
-audioChunks.push(e.data);
-
-};
-
-}
-
-function stopRecord(){
-
-mediaRecorder.stop();
-
-mediaRecorder.onstop =
-()=>{
-
-const blob =
-new Blob(audioChunks);
-
-const url =
-URL.createObjectURL(blob);
-
-messages.innerHTML += \`
-<div class="msg">
-<audio controls src="\${url}">
-</audio>
-</div>
-\`;
-
-audioChunks = [];
-
-};
-
-}
-
-// FILES
+// FILE UPLOAD
 async function uploadFile(){
 
 const file =
-document.getElementById("fileInput").files[0];
+document.getElementById("file").files[0];
 
 const form =
 new FormData();
@@ -656,11 +438,11 @@ const data =
 await res.json();
 
 addMessage(
-\`📁
-<a href="\${data.url}"
-target="_blank">
-\${file.name}
-</a>\`
+'📁 <a target="_blank" href="' +
+data.url +
+'">' +
+file.name +
+'</a>'
 );
 
 }
@@ -677,77 +459,19 @@ target="_blank">
 // REGISTER
 app.post("/register", async (req, res) => {
 
-const { username, password } = req.body;
+const { username, password } =
+req.body;
 
 const hashed =
 await bcrypt.hash(password, 10);
 
-try {
-
-db.prepare(`
-INSERT INTO users
-(username,password)
-VALUES (?,?)
-`).run(username, hashed);
+accounts.push({
+username,
+password:hashed
+});
 
 res.json({
 success:true
-});
-
-} catch {
-
-res.status(400).json({
-error:"user exists"
-});
-
-}
-
-});
-
-// LOGIN
-app.post("/login", async (req, res) => {
-
-const { username, password } = req.body;
-
-const user =
-db.prepare(`
-SELECT * FROM users
-WHERE username = ?
-`).get(username);
-
-if(!user){
-
-return res.status(400).json({
-error:"user not found"
-});
-
-}
-
-const valid =
-await bcrypt.compare(
-password,
-user.password
-);
-
-if(!valid){
-
-return res.status(400).json({
-error:"wrong password"
-});
-
-}
-
-const token = jwt.sign(
-{
-id:user.id,
-username:user.username
-},
-"SECRET_KEY"
-);
-
-res.json({
-token,
-username:user.username
 });
 
 });
@@ -776,15 +500,15 @@ response.choices[0]
 
 } catch {
 
-res.status(500).json({
-error:"AI error"
+res.json({
+response:"AI error"
 });
 
 }
 
 });
 
-// FILE UPLOAD
+// UPLOAD
 app.post(
 "/upload",
 upload.single("file"),
@@ -802,77 +526,49 @@ req.file.filename
 // SOCKET
 io.on("connection",(socket)=>{
 
-socket.on("join",(username)=>{
+socket.on(
+"join",
+(username)=>{
 
-users[socket.id] = username;
-
-io.emit(
-"system",
-username + " joined"
-);
+users[socket.id] =
+username;
 
 io.emit(
 "users",
 users
 );
 
-});
-
-// CHANNEL CHAT
-socket.on(
-"channel_message",
-(data)=>{
-
-db.prepare(`
-INSERT INTO messages
-(username,text)
-VALUES (?,?)
-`).run(
-users[socket.id],
-data.message
+io.emit(
+"system",
+username +
+" joined"
 );
+
+}
+);
+
+socket.on(
+"message",
+(msg)=>{
 
 io.emit(
-"channel_message",
+"message",
 {
-channel:data.channel,
-username:
+user:
 users[socket.id],
-message:data.message
+text:msg
 }
 );
 
 }
 );
 
-// PM
-socket.on(
-"private_message",
-(data)=>{
-
-io.to(data.to).emit(
-"private_message",
-{
-username:
-users[socket.id],
-message:
-data.message
-}
-);
-
-}
-);
-
-// CALL
 socket.on(
 "call-user",
 (data)=>{
 
 io.to(data.to).emit(
-"incoming-call",
-{
-from:socket.id
-}
+"incoming-call"
 );
 
 }
@@ -881,12 +577,6 @@ from:socket.id
 socket.on(
 "disconnect",
 ()=>{
-
-io.emit(
-"system",
-users[socket.id] +
-" left"
-);
 
 delete users[socket.id];
 
@@ -901,5 +591,9 @@ users
 });
 
 server.listen(3000,()=>{
-console.log("Rucord running");
+
+console.log(
+"Rucord running"
+);
+
 });
