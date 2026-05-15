@@ -39,7 +39,7 @@ const openai = new OpenAI({
 let users = {};
 let accounts = [];
 
-// FRONTEND
+// SITE
 app.get("/", (req, res) => {
 
 res.send(`
@@ -58,11 +58,12 @@ content="width=device-width, initial-scale=1.0">
 
 body{
 margin:0;
+font-family:Arial;
 background:#202225;
 color:white;
-font-family:Arial;
 display:flex;
 height:100vh;
+overflow:hidden;
 }
 
 #sidebar{
@@ -89,6 +90,7 @@ background:#36393f;
 padding:10px;
 border-radius:10px;
 margin-bottom:10px;
+word-break:break-word;
 }
 
 #bottom{
@@ -100,13 +102,21 @@ input,button{
 padding:10px;
 border:none;
 border-radius:8px;
-margin:2px;
+margin:4px;
+}
+
+button{
+cursor:pointer;
 }
 
 video{
-width:200px;
+width:220px;
 border-radius:10px;
 margin-top:10px;
+}
+
+a{
+color:#00b0f4;
 }
 
 @media(max-width:700px){
@@ -117,7 +127,7 @@ flex-direction:column;
 
 #sidebar{
 width:100%;
-height:250px;
+height:260px;
 }
 
 }
@@ -149,27 +159,31 @@ Login
 
 <hr>
 
-<h3>Users</h3>
+<h3>Online</h3>
 
 <div id="users"></div>
 
 <hr>
 
+<h3>Calls</h3>
+
 <input id="callId"
 placeholder="socket id">
 
 <button onclick="callUser()">
-Call
+Video Call
 </button>
 
 <button onclick="shareScreen()">
-Screen
+Screen Share
 </button>
 
 <video id="video"
 autoplay muted></video>
 
 <hr>
+
+<h3>Upload</h3>
 
 <input type="file"
 id="file">
@@ -247,7 +261,8 @@ username
 );
 
 addMessage(
-"✅ logged in"
+"✅ logged in as " +
+username
 );
 
 }
@@ -267,6 +282,7 @@ input.value = "";
 
 }
 
+// RECEIVE
 socket.on(
 "message",
 (data)=>{
@@ -294,11 +310,11 @@ usersDiv.innerHTML = "";
 for(let id in data){
 
 usersDiv.innerHTML +=
-"<div>" +
+"<div class='msg'>" +
 data[id] +
 "<br><small>" +
 id +
-"</small></div><hr>";
+"</small></div>";
 
 }
 
@@ -508,7 +524,7 @@ response:"AI error"
 
 });
 
-// UPLOAD
+// FILE UPLOAD
 app.post(
 "/upload",
 upload.single("file"),
@@ -590,7 +606,7 @@ users
 
 });
 
-server.listen(3000,()=>{
+server.listen(3000",()=>{
 
 console.log(
 "Rucord running"
