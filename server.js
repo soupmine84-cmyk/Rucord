@@ -726,3 +726,359 @@ server.listen(PORT,()=>{
 console.log("SERVER STARTED " + PORT);
 
 });
+/*
+
+ДОБАВЬ ЭТО В ТВОЙ ТЕКУЩИЙ server.js
+
+ЭТО НЕ ВЕСЬ ФАЙЛ.
+ЭТО АПГРЕЙД ФУНКЦИЙ.
+
+*/
+
+
+// ================= NEW DATA =================
+
+const friends = new Map();
+const privateChats = new Map();
+const aiMemory = new Map();
+const leaderboard = new Map();
+
+
+// ================= AI =================
+
+function aiReply(text,user){
+
+const t = text.toLowerCase();
+
+if(!aiMemory.has(user)){
+aiMemory.set(user,[]);
+}
+
+aiMemory.get(user).push(text);
+
+if(t.includes("привет"))
+return "👋 Привет " + user;
+
+if(t.includes("кто ты"))
+return "🤖 Я AI бот Rucord";
+
+if(t.includes("помощь"))
+return "/ai /online /leaderboard";
+
+if(t.includes("игра"))
+return "🎮 Открой вкладку игр";
+
+return "🧠 AI думает: " + text;
+
+}
+
+
+// ================= FRIENDS API =================
+
+app.post("/addFriend",(req,res)=>{
+
+const { user, friend } = req.body;
+
+if(!users.has(friend)){
+
+return res.json({
+success:false,
+message:"Пользователь не найден"
+});
+
+}
+
+if(!friends.has(user)){
+friends.set(user,[]);
+}
+
+friends.get(user).push(friend);
+
+res.json({
+success:true
+});
+
+});
+
+
+app.post("/friends",(req,res)=>{
+
+const { user } = req.body;
+
+res.json(
+friends.get(user) || []
+);
+
+});
+
+
+// ================= PRIVATE CHAT =================
+
+app.post("/privateMessages",(req,res)=>{
+
+const { u1,u2 } = req.body;
+
+const key =
+[u1,u2].sort().join("_");
+
+res.json(
+privateChats.get(key) || []
+);
+
+});
+
+
+// ================= SOCKET =================
+
+socket.on("privateMessage",(msg)=>{
+
+const key =
+[msg.from,msg.to]
+.sort()
+.join("_");
+
+if(!privateChats.has(key)){
+
+privateChats.set(key,[]);
+
+}
+
+privateChats.get(key).push(msg);
+
+const target =
+Array.from(onlineUsers.entries())
+.find(([id,name])=>name===msg.to);
+
+if(target){
+
+io.to(target[0])
+.emit("privateMessage",msg);
+
+}
+
+socket.emit("privateMessage",msg);
+
+});
+
+
+// ================= AI CHAT =================
+
+socket.on("ai",(data)=>{
+
+const answer =
+aiReply(data.text,data.user);
+
+socket.emit("ai",{
+user:"AI",
+text:answer
+});
+
+});
+
+
+// ================= LEADERBOARD =================
+
+function addScore(user){
+
+const current =
+leaderboard.get(user) || 0;
+
+leaderboard.set(user,current + 1);
+
+}
+
+app.get("/leaderboard",(req,res)=>{
+
+const top =
+Array.from(leaderboard.entries())
+.sort((a,b)=>b[1]-a[1]);
+
+res.json(top);
+
+});
+
+
+// ================= TIC TAC TOE =================
+
+const games = new Map();
+
+socket.on("tttStart",(user)=>{
+
+games.set(user,{
+board:["","","","","","","","",""],
+turn:"X"
+});
+
+socket.emit("tttData",
+games.get(user));
+
+});
+
+
+socket.on("tttMove",(data)=>{
+
+const game =
+games.get(data.user);
+
+if(!game) return;
+
+if(game.board[data.index] !== "")
+return;
+
+game.board[data.index] =
+game.turn;
+
+game.turn =
+game.turn === "X"
+? "O"
+: "X";
+
+socket.emit("tttData",game);
+
+});
+
+
+// ================= QUIZ =================
+
+const quiz = [
+
+{
+q:"Столица Франции?",
+a:"париж"
+},
+
+{
+q:"2+2?",
+a:"4"
+}
+
+];
+
+socket.on("quiz",()=>{
+
+const random =
+quiz[
+Math.floor(
+Math.random()*quiz.length
+)
+];
+
+socket.emit("quiz",random);
+
+});
+
+
+// ================= PVP =================
+
+socket.on("pvpHit",(user)=>{
+
+addScore(user);
+
+io.emit("leaderboard",
+Array.from(
+leaderboard.entries()
+));
+
+});
+
+
+
+
+// ================= FRONTEND HTML =================
+
+/*
+
+В HTML ДОБАВЬ:
+
+1. SIDEBAR FRIENDS
+2. AI BUTTON
+3. PRIVATE CHAT
+4. GAMES PANEL
+5. THEMES
+6. REACTIONS
+
+*/
+
+
+===== FRIENDS SIDEBAR =====
+
+/*
+
+<div class="friends">
+<h3>Друзья</h3>
+<div id="friendsList"></div>
+</div>
+
+*/
+
+
+===== AI BUTTON =====
+
+/*
+
+<button onclick="openAI()">
+🤖 AI
+</button>
+
+*/
+
+
+===== THEMES =====
+
+/*
+
+body.light{
+background:#f5f5f5;
+color:black;
+}
+
+*/
+
+
+// ===== ANIMATED BG =====
+
+
+
+body::before{
+content:"";
+position:fixed;
+inset:0;
+background:
+radial-gradient(circle,#5865f2 0%,transparent 50%);
+filter:blur(120px);
+opacity:.3;
+animation:bg 10s infinite alternate;
+}
+
+@keyframes bg{
+from{
+transform:translateX(-100px);
+}
+to{
+transform:translateX(100px);
+}
+}
+
+
+
+==== EMOJI REACTIONS =====
+
+
+
+<div class="reactions">
+👍 ❤️ 😂 🔥
+</div>
+
+*/
+
+
+===== PROFILE CARD =====
+
+
+
+<div class="profile-card">
+<img src="avatar">
+<h2>USERNAME</h2>
+<p>online</p>
+</div>
+
