@@ -1,216 +1,469 @@
-require("dotenv").config();
-
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const { OpenAI } = require("openai");
 
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors());
-app.use(express.json());
-
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
-
-app.use("/uploads", express.static("uploads"));
-
-const upload = multer({
-  dest: "uploads/"
-});
-
 const io = new Server(server, {
-  cors: {
-    origin: "*"
-  }
+  cors: { origin: "*" }
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+app.use(express.json({ limit: "50mb" }));
 
-let users = {};
-let accounts = [];
+// ================= DATA =================
 
-// SITE
+const users = new Map();
+const globalMessages = [];
+const onlineUsers = new Map();
+
+// ================= HTML =================
+
 app.get("/", (req, res) => {
-
-res.send(`
-
+  res.send(`
 <!DOCTYPE html>
-<html>
-
+<html lang="ru">
 <head>
-
-<title>Rucord</title>
-
-<meta name="viewport"
-content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Rucord X</title>
 
 <style>
 
-body{
+*{
 margin:0;
-font-family:Arial;
-background:#202225;
+padding:0;
+box-sizing:border-box;
+font-family:Inter,sans-serif;
+}
+
+body{
+background:#0f1117;
 color:white;
-display:flex;
 height:100vh;
 overflow:hidden;
 }
 
-#sidebar{
-width:260px;
-background:#2f3136;
-padding:10px;
-overflow:auto;
+/* LOGIN */
+
+#login{
+position:fixed;
+inset:0;
+background:
+radial-gradient(circle at top left,#5865f2 0%,transparent 30%),
+radial-gradient(circle at bottom right,#8f3dff 0%,transparent 30%),
+#0f1117;
+display:flex;
+align-items:center;
+justify-content:center;
+z-index:100;
 }
 
-#chat{
-flex:1;
+.login-box{
+width:380px;
+background:rgba(20,22,30,.92);
+border:1px solid rgba(255,255,255,.08);
+backdrop-filter:blur(20px);
+padding:40px;
+border-radius:28px;
+box-shadow:0 0 60px rgba(88,101,242,.25);
+animation:show .4s ease;
+}
+
+@keyframes show{
+from{
+opacity:0;
+transform:translateY(20px) scale(.95);
+}
+to{
+opacity:1;
+transform:none;
+}
+}
+
+.logo{
+font-size:42px;
+font-weight:800;
+margin-bottom:10px;
+text-align:center;
+background:linear-gradient(90deg,#fff,#8ea1ff);
+-webkit-background-clip:text;
+-webkit-text-fill-color:transparent;
+}
+
+.sub{
+text-align:center;
+color:#8f96a3;
+margin-bottom:30px;
+}
+
+.input{
+width:100%;
+padding:16px;
+border:none;
+outline:none;
+background:#161922;
+color:white;
+border-radius:16px;
+margin-bottom:14px;
+font-size:15px;
+border:1px solid transparent;
+transition:.2s;
+}
+
+.input:focus{
+border-color:#5865f2;
+box-shadow:0 0 0 4px rgba(88,101,242,.15);
+}
+
+.btn{
+width:100%;
+padding:15px;
+border:none;
+border-radius:16px;
+font-weight:700;
+cursor:pointer;
+transition:.2s;
+font-size:15px;
+}
+
+.login-btn{
+background:#5865f2;
+color:white;
+margin-top:5px;
+}
+
+.login-btn:hover{
+transform:translateY(-2px);
+background:#6d78ff;
+}
+
+.register-btn{
+margin-top:10px;
+background:#232734;
+color:#cfd3dc;
+}
+
+.register-btn:hover{
+background:#2b3040;
+}
+
+/* APP */
+
+#app{
+display:none;
+height:100vh;
+}
+
+/* SIDEBAR */
+
+.sidebar{
+width:300px;
+background:#12141c;
+border-right:1px solid rgba(255,255,255,.05);
 display:flex;
 flex-direction:column;
 }
 
-#messages{
+.sidebar-top{
+padding:24px;
+border-bottom:1px solid rgba(255,255,255,.05);
+}
+
+.brand{
+font-size:28px;
+font-weight:800;
+}
+
+.online{
+margin-top:8px;
+color:#7d8594;
+font-size:14px;
+}
+
+.channels{
+padding:15px;
+overflow:auto;
+}
+
+.channel{
+padding:16px;
+background:#181b24;
+border-radius:18px;
+margin-bottom:10px;
+cursor:pointer;
+transition:.2s;
+font-weight:600;
+}
+
+.channel:hover{
+background:#202432;
+transform:translateX(4px);
+}
+
+.channel.active{
+background:linear-gradient(90deg,#5865f2,#7b61ff);
+}
+
+/* CHAT */
+
+.chat{
+flex:1;
+display:flex;
+flex-direction:column;
+background:#0f1117;
+}
+
+.chat-top{
+height:85px;
+border-bottom:1px solid rgba(255,255,255,.05);
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding:0 30px;
+background:rgba(255,255,255,.02);
+backdrop-filter:blur(10px);
+}
+
+.chat-title{
+font-size:24px;
+font-weight:700;
+}
+
+.actions{
+display:flex;
+gap:10px;
+}
+
+.action{
+background:#1c202c;
+border:none;
+color:white;
+padding:12px 18px;
+border-radius:14px;
+cursor:pointer;
+transition:.2s;
+font-weight:600;
+}
+
+.action:hover{
+background:#5865f2;
+transform:translateY(-2px);
+}
+
+/* MESSAGES */
+
+.messages{
 flex:1;
 overflow:auto;
-padding:20px;
-}
-
-.msg{
-background:#36393f;
-padding:10px;
-border-radius:10px;
-margin-bottom:10px;
-word-break:break-word;
-}
-
-#bottom{
-padding:10px;
-background:#40444b;
-}
-
-input,button{
-padding:10px;
-border:none;
-border-radius:8px;
-margin:4px;
-}
-
-button{
-cursor:pointer;
-}
-
-video{
-width:220px;
-border-radius:10px;
-margin-top:10px;
-}
-
-a{
-color:#00b0f4;
-}
-
-@media(max-width:700px){
-
-body{
+padding:30px;
+display:flex;
 flex-direction:column;
+gap:18px;
 }
 
-#sidebar{
-width:100%;
-height:260px;
+.message{
+display:flex;
+gap:14px;
+align-items:flex-start;
+animation:fade .2s ease;
+}
+
+@keyframes fade{
+from{
+opacity:0;
+transform:translateY(10px);
+}
+to{
+opacity:1;
+transform:none;
+}
+}
+
+.avatar{
+width:48px;
+height:48px;
+border-radius:50%;
+background:linear-gradient(135deg,#5865f2,#8f3dff);
+display:flex;
+align-items:center;
+justify-content:center;
+font-weight:800;
+font-size:18px;
+flex-shrink:0;
+}
+
+.bubble{
+background:#181b24;
+padding:16px;
+border-radius:20px;
+max-width:700px;
+box-shadow:0 4px 20px rgba(0,0,0,.25);
+}
+
+.name{
+font-weight:700;
+margin-bottom:8px;
+color:#aab2ff;
+}
+
+.text{
+line-height:1.5;
+font-size:15px;
+}
+
+/* INPUT */
+
+.input-bar{
+padding:24px;
+border-top:1px solid rgba(255,255,255,.05);
+display:flex;
+gap:16px;
+background:#12141c;
+}
+
+.msg-input{
+flex:1;
+background:#1a1d27;
+border:none;
+outline:none;
+padding:18px;
+border-radius:20px;
+color:white;
+font-size:15px;
+}
+
+.send{
+width:70px;
+border:none;
+border-radius:20px;
+background:linear-gradient(135deg,#5865f2,#7b61ff);
+color:white;
+font-size:18px;
+cursor:pointer;
+font-weight:800;
+transition:.2s;
+}
+
+.send:hover{
+transform:scale(1.05);
+}
+
+/* MOBILE */
+
+@media(max-width:800px){
+
+.sidebar{
+display:none;
+}
+
+.chat-top{
+padding:0 16px;
+}
+
+.chat-title{
+font-size:18px;
+}
+
+.messages{
+padding:16px;
+}
+
+.input-bar{
+padding:16px;
 }
 
 }
 
 </style>
-
 </head>
 
 <body>
 
-<div id="sidebar">
+<!-- LOGIN -->
 
-<h2>Rucord</h2>
+<div id="login">
 
-<input id="username"
-placeholder="username">
+<div class="login-box">
 
-<input id="password"
-type="password"
-placeholder="password">
+<div class="logo">Rucord X</div>
+<div class="sub">Новый уровень общения</div>
 
-<button onclick="register()">
-Register
+<input id="username" class="input" placeholder="Имя">
+<input id="password" class="input" type="password" placeholder="Пароль">
+
+<button id="loginBtn" class="btn login-btn">
+Войти
 </button>
 
-<button onclick="login()">
-Login
-</button>
-
-<hr>
-
-<h3>Online</h3>
-
-<div id="users"></div>
-
-<hr>
-
-<h3>Calls</h3>
-
-<input id="callId"
-placeholder="socket id">
-
-<button onclick="callUser()">
-Video Call
-</button>
-
-<button onclick="shareScreen()">
-Screen Share
-</button>
-
-<video id="video"
-autoplay muted></video>
-
-<hr>
-
-<h3>Upload</h3>
-
-<input type="file"
-id="file">
-
-<button onclick="uploadFile()">
-Upload
+<button id="registerBtn" class="btn register-btn">
+Создать аккаунт
 </button>
 
 </div>
 
-<div id="chat">
+</div>
 
-<div id="messages"></div>
+<!-- APP -->
 
-<div id="bottom">
+<div id="app">
 
-<input id="message"
-placeholder="message..."
-style="width:60%">
+<div class="sidebar">
 
-<button onclick="sendMessage()">
-Send
+<div class="sidebar-top">
+<div class="brand">Rucord</div>
+<div class="online" id="onlineCount">
+Онлайн: 0
+</div>
+</div>
+
+<div class="channels">
+<div class="channel active">
+# общий-чат
+</div>
+
+<div class="channel">
+🎮 игры
+</div>
+
+<div class="channel">
+🤖 ai
+</div>
+</div>
+
+</div>
+
+<div class="chat">
+
+<div class="chat-top">
+
+<div class="chat-title">
+# общий-чат
+</div>
+
+<div class="actions">
+<button class="action">🎮</button>
+<button class="action">📞</button>
+<button class="action">🤖</button>
+</div>
+
+</div>
+
+<div class="messages" id="messages"></div>
+
+<div class="input-bar">
+
+<input
+id="messageInput"
+class="msg-input"
+placeholder="Написать сообщение..."
+>
+
+<button id="sendBtn" class="send">
+➤
 </button>
 
-<button onclick="askAI()">
-AI
-</button>
+</div>
 
 </div>
 
@@ -222,19 +475,24 @@ AI
 
 const socket = io();
 
-const messages =
-document.getElementById("messages");
+let currentUser = "";
 
-// REGISTER
-async function register(){
+// ===== LOGIN =====
+
+async function login(type){
 
 const username =
-document.getElementById("username").value;
+document.getElementById("username").value.trim();
 
 const password =
-document.getElementById("password").value;
+document.getElementById("password").value.trim();
 
-await fetch("/register",{
+if(!username || !password){
+alert("Заполни поля");
+return;
+}
+
+const res = await fetch("/" + type,{
 method:"POST",
 headers:{
 "Content-Type":"application/json"
@@ -245,245 +503,148 @@ password
 })
 });
 
-alert("registered");
+const data = await res.json();
+
+if(!data.success){
+alert(data.message);
+return;
+}
+
+currentUser = username;
+
+document.getElementById("login").style.display = "none";
+document.getElementById("app").style.display = "flex";
+
+socket.emit("join",username);
+
+loadMessages();
 
 }
 
-// LOGIN
-async function login(){
+document.getElementById("loginBtn")
+.onclick = () => login("login");
 
-const username =
-document.getElementById("username").value;
+document.getElementById("registerBtn")
+.onclick = () => login("register");
 
-socket.emit(
-"join",
-username
-);
+// ===== MESSAGES =====
 
-addMessage(
-"✅ logged in as " +
-username
-);
+function addMessage(msg){
 
-}
+const messages =
+document.getElementById("messages");
 
-// SEND
-function sendMessage(){
+const div = document.createElement("div");
 
-const input =
-document.getElementById("message");
+div.className = "message";
 
-socket.emit(
-"message",
-input.value
-);
+div.innerHTML = \`
+<div class="avatar">
+\${msg.user[0].toUpperCase()}
+</div>
 
-input.value = "";
+<div class="bubble">
+<div class="name">
+\${escapeHtml(msg.user)}
+</div>
 
-}
+<div class="text">
+\${escapeHtml(msg.text)}
+</div>
+</div>
+\`;
 
-// RECEIVE
-socket.on(
-"message",
-(data)=>{
-
-addMessage(
-"<b>" +
-data.user +
-"</b>: " +
-data.text
-);
-
-}
-);
-
-// USERS
-socket.on(
-"users",
-(data)=>{
-
-const usersDiv =
-document.getElementById("users");
-
-usersDiv.innerHTML = "";
-
-for(let id in data){
-
-usersDiv.innerHTML +=
-"<div class='msg'>" +
-data[id] +
-"<br><small>" +
-id +
-"</small></div>";
-
-}
-
-}
-);
-
-// SYSTEM
-socket.on(
-"system",
-(msg)=>{
-
-addMessage(
-"⚡ " + msg
-);
-
-}
-);
-
-function addMessage(text){
-
-messages.innerHTML +=
-'<div class="msg">' +
-text +
-'</div>';
+messages.appendChild(div);
 
 messages.scrollTop =
 messages.scrollHeight;
 
 }
 
-// AI
-async function askAI(){
+function escapeHtml(text){
 
-const msg =
-document.getElementById("message").value;
+return text
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;");
 
-const res =
-await fetch("/ai",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-message:msg
-})
+}
+
+async function loadMessages(){
+
+const res = await fetch("/messages");
+const data = await res.json();
+
+document.getElementById("messages").innerHTML = "";
+
+data.forEach(addMessage);
+
+}
+
+function sendMessage(){
+
+const input =
+document.getElementById("messageInput");
+
+const text = input.value.trim();
+
+if(!text) return;
+
+socket.emit("message",{
+user:currentUser,
+text
 });
 
-const data =
-await res.json();
-
-addMessage(
-"🤖 " +
-data.response
-);
+input.value = "";
 
 }
 
-// VIDEO
-async function callUser(){
+document.getElementById("sendBtn")
+.onclick = sendMessage;
 
-const target =
-document.getElementById("callId").value;
+document.getElementById("messageInput")
+.addEventListener("keypress",e=>{
 
-socket.emit(
-"call-user",
-{
-to:target
+if(e.key === "Enter"){
+sendMessage();
 }
-);
 
-const stream =
-await navigator.mediaDevices.getUserMedia({
-video:true,
-audio:true
 });
 
-document.getElementById(
-"video"
-).srcObject = stream;
+// ===== SOCKET =====
 
-}
-
-socket.on(
-"incoming-call",
-async()=>{
-
-alert("Incoming call");
-
-const stream =
-await navigator.mediaDevices.getUserMedia({
-video:true,
-audio:true
+socket.on("message",msg=>{
+addMessage(msg);
 });
 
-document.getElementById(
-"video"
-).srcObject = stream;
-
-}
-);
-
-// SCREEN SHARE
-async function shareScreen(){
-
-const stream =
-await navigator.mediaDevices.getDisplayMedia({
-video:true
+socket.on("online",count=>{
+document.getElementById("onlineCount")
+.innerText = "Онлайн: " + count;
 });
-
-document.getElementById(
-"video"
-).srcObject = stream;
-
-}
-
-// FILE UPLOAD
-async function uploadFile(){
-
-const file =
-document.getElementById("file").files[0];
-
-const form =
-new FormData();
-
-form.append(
-"file",
-file
-);
-
-const res =
-await fetch("/upload",{
-method:"POST",
-body:form
-});
-
-const data =
-await res.json();
-
-addMessage(
-'📁 <a target="_blank" href="' +
-data.url +
-'">' +
-file.name +
-'</a>'
-);
-
-}
 
 </script>
 
 </body>
 </html>
-
 `);
-
 });
 
-// REGISTER
-app.post("/register", async (req, res) => {
+// ================= API =================
 
-const { username, password } =
-req.body;
+app.post("/register",(req,res)=>{
 
-const hashed =
-await bcrypt.hash(password, 10);
+const { username,password } = req.body;
 
-accounts.push({
-username,
-password:hashed
+if(users.has(username)){
+
+return res.json({
+success:false,
+message:"Аккаунт уже существует"
+});
+
+}
+
+users.set(username,{
+password
 });
 
 res.json({
@@ -492,124 +653,76 @@ success:true
 
 });
 
-// AI
-app.post("/ai", async (req, res) => {
+app.post("/login",(req,res)=>{
 
-try {
+const { username,password } = req.body;
 
-const response =
-await openai.chat.completions.create({
-model:"gpt-4.1-mini",
-messages:[
-{
-role:"user",
-content:req.body.message
-}
-]
-});
+const user = users.get(username);
 
-res.json({
-response:
-response.choices[0]
-.message.content
-});
+if(!user || user.password !== password){
 
-} catch {
-
-res.json({
-response:"AI error"
+return res.json({
+success:false,
+message:"Неверный логин"
 });
 
 }
 
-});
-
-// FILE UPLOAD
-app.post(
-"/upload",
-upload.single("file"),
-(req,res)=>{
-
 res.json({
-url:
-"/uploads/" +
-req.file.filename
+success:true
 });
 
-}
-);
+});
 
-// SOCKET
+app.get("/messages",(req,res)=>{
+res.json(globalMessages);
+});
+
+// ================= SOCKET =================
+
 io.on("connection",(socket)=>{
 
-socket.on(
-"join",
-(username)=>{
+socket.on("join",(username)=>{
 
-users[socket.id] =
-username;
+onlineUsers.set(socket.id,username);
 
-io.emit(
-"users",
-users
-);
-
-io.emit(
-"system",
-username +
-" joined"
-);
-
-}
-);
-
-socket.on(
-"message",
-(msg)=>{
-
-io.emit(
-"message",
-{
-user:
-users[socket.id],
-text:msg
-}
-);
-
-}
-);
-
-socket.on(
-"call-user",
-(data)=>{
-
-io.to(data.to).emit(
-"incoming-call"
-);
-
-}
-);
-
-socket.on(
-"disconnect",
-()=>{
-
-delete users[socket.id];
-
-io.emit(
-"users",
-users
-);
-
-}
-);
+io.emit("online",onlineUsers.size);
 
 });
 
-server.listen(3000, () => {
+socket.on("message",(msg)=>{
 
-console.log(
-"Rucord running"
-);
+const message = {
+user:msg.user,
+text:msg.text
+};
+
+globalMessages.push(message);
+
+if(globalMessages.length > 100){
+globalMessages.shift();
+}
+
+io.emit("message",message);
+
+});
+
+socket.on("disconnect",()=>{
+
+onlineUsers.delete(socket.id);
+
+io.emit("online",onlineUsers.size);
+
+});
+
+});
+
+// ================= START =================
+
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT,()=>{
+
+console.log("SERVER STARTED " + PORT);
 
 });
