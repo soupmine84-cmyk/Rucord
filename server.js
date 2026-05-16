@@ -1,1215 +1,19 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
+// ================= PART 1 =================
+// ВСТАВЬ В САМЫЙ ВЕРХ server.js
+// ПОСЛЕ require()
 
-const app = express();
-const server = http.createServer(app);
+const fs = require("fs");
 
-const io = new Server(server,{
-cors:{ origin:"*" }
-});
 
-app.use(express.json({ limit:"50mb" }));
 
 // ================= DATA =================
 
 const users = new Map();
 const globalMessages = [];
 const onlineUsers = new Map();
-const avatars = new Map();
 
 const profiles = new Map();
-
-profiles.set("AdminGrigory",{
-bio:"Основатель Rucord",
-verified:true,
-official:true
-});
-
-profiles.set("SUIDKOP",{
-bio:"Официальный аккаунт",
-verified:true,
-official:true
-});
-
-// ================= HTML =================
-
-app.get("/",(req,res)=>{
-
-res.send(`
-<!DOCTYPE html>
-<html lang="ru">
-
-<head>
-
-<meta charset="UTF-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1.0">
-
-<title>Rucord X</title>
-
-<style>
-
-*{
-margin:0;
-padding:0;
-box-sizing:border-box;
-font-family:Inter,sans-serif;
-}
-
-body{
-background:#0f1117;
-color:white;
-height:100vh;
-overflow:hidden;
-}
-
-/* LOGIN */
-
-#login{
-position:fixed;
-inset:0;
-background:
-radial-gradient(circle at top left,#5865f2 0%,transparent 30%),
-radial-gradient(circle at bottom right,#8f3dff 0%,transparent 30%),
-#0f1117;
-display:flex;
-align-items:center;
-justify-content:center;
-z-index:100;
-}
-
-.login-box{
-width:380px;
-background:rgba(20,22,30,.92);
-padding:40px;
-border-radius:28px;
-}
-
-.logo{
-font-size:42px;
-font-weight:800;
-margin-bottom:10px;
-text-align:center;
-}
-
-.sub{
-text-align:center;
-color:#8f96a3;
-margin-bottom:30px;
-}
-
-.input{
-width:100%;
-padding:16px;
-border:none;
-outline:none;
-background:#161922;
-color:white;
-border-radius:16px;
-margin-bottom:14px;
-font-size:15px;
-}
-
-.btn{
-width:100%;
-padding:15px;
-border:none;
-border-radius:16px;
-font-weight:700;
-cursor:pointer;
-font-size:15px;
-}
-
-.login-btn{
-background:#5865f2;
-color:white;
-margin-top:5px;
-}
-
-.register-btn{
-margin-top:10px;
-background:#232734;
-color:#cfd3dc;
-}
-
-/* APP */
-
-#app{
-display:none;
-height:100vh;
-}
-
-/* SIDEBAR */
-
-.sidebar{
-width:300px;
-background:#12141c;
-border-right:1px solid rgba(255,255,255,.05);
-display:flex;
-flex-direction:column;
-}
-
-.sidebar-top{
-padding:24px;
-border-bottom:1px solid rgba(255,255,255,.05);
-}
-
-.brand{
-font-size:28px;
-font-weight:800;
-}
-
-.online{
-margin-top:8px;
-color:#7d8594;
-font-size:14px;
-}
-
-.channels{
-padding:15px;
-overflow:auto;
-}
-
-.channel{
-padding:16px;
-background:#181b24;
-border-radius:18px;
-margin-bottom:10px;
-cursor:pointer;
-transition:.2s;
-font-weight:600;
-}
-
-.channel:hover{
-background:#202432;
-transform:translateX(4px);
-}
-
-/* CHAT */
-
-.chat{
-flex:1;
-display:flex;
-flex-direction:column;
-background:#0f1117;
-}
-
-.chat-top{
-height:85px;
-border-bottom:1px solid rgba(255,255,255,.05);
-display:flex;
-align-items:center;
-padding:0 30px;
-font-size:24px;
-font-weight:700;
-}
-
-.messages{
-flex:1;
-overflow:auto;
-padding:30px;
-display:flex;
-flex-direction:column;
-gap:18px;
-}
-
-.message{
-display:flex;
-gap:14px;
-align-items:flex-start;
-}
-
-.message.me{
-flex-direction:row-reverse;
-}
-
-.avatar{
-width:48px;
-height:48px;
-border-radius:50%;
-background:linear-gradient(135deg,#5865f2,#8f3dff);
-display:flex;
-align-items:center;
-justify-content:center;
-font-weight:800;
-font-size:18px;
-flex-shrink:0;
-overflow:hidden;
-background-size:cover;
-background-position:center;
-}
-
-.message.me .avatar{
-background:linear-gradient(135deg,#ff4fd8,#ff7b7b);
-}
-
-.bubble{
-background:#181b24;
-padding:16px;
-border-radius:20px;
-max-width:700px;
-}
-
-.message.me .bubble{
-background:linear-gradient(135deg,#5865f2,#7b61ff);
-}
-
-.name{
-font-weight:700;
-margin-bottom:8px;
-color:#aab2ff;
-cursor:pointer;
-}
-
-.message.me .name{
-color:white;
-text-align:right;
-}
-
-.text{
-line-height:1.5;
-font-size:15px;
-}
-
-.message.me .text{
-text-align:right;
-}
-
-/* INPUT */
-
-.input-bar{
-padding:24px;
-display:flex;
-gap:16px;
-background:#12141c;
-}
-
-.msg-input{
-flex:1;
-background:#1a1d27;
-border:none;
-outline:none;
-padding:18px;
-border-radius:20px;
-color:white;
-font-size:15px;
-}
-
-.send{
-width:70px;
-border:none;
-border-radius:20px;
-background:linear-gradient(135deg,#5865f2,#7b61ff);
-color:white;
-font-size:18px;
-cursor:pointer;
-}
-
-/* PROFILE */
-
-#profileModal{
-display:none;
-position:fixed;
-inset:0;
-background:rgba(0,0,0,.7);
-align-items:center;
-justify-content:center;
-z-index:999;
-}
-
-.profile-card{
-width:340px;
-background:#181b24;
-border-radius:28px;
-padding:30px;
-}
-
-.profile-avatar{
-width:90px;
-height:90px;
-border-radius:50%;
-background:linear-gradient(135deg,#5865f2,#8f3dff);
-display:flex;
-align-items:center;
-justify-content:center;
-font-size:36px;
-font-weight:800;
-margin:auto;
-overflow:hidden;
-background-size:cover;
-background-position:center;
-}
-
-/* OFFICIAL */
-
-#officialModal{
-display:none;
-position:fixed;
-inset:0;
-background:rgba(0,0,0,.7);
-align-items:center;
-justify-content:center;
-z-index:9999;
-}
-
-.official-card{
-width:420px;
-background:#181b24;
-padding:30px;
-border-radius:28px;
-}
-
-</style>
-
-</head>
-
-<body>
-
-<!-- LOGIN -->
-
-<div id="login">
-
-<div class="login-box">
-
-<div class="logo">
-Rucord X
-</div>
-
-<div class="sub">
-Новый уровень общения
-</div>
-
-<input
-id="username"
-class="input"
-placeholder="Имя"
->
-
-<input
-id="password"
-type="password"
-class="input"
-placeholder="Пароль"
->
-
-<button
-id="loginBtn"
-class="btn login-btn"
->
-Войти
-</button>
-
-<button
-id="registerBtn"
-class="btn register-btn"
->
-Создать аккаунт
-</button>
-
-</div>
-
-</div>
-
-<!-- APP -->
-
-<div id="app">
-
-<div class="sidebar">
-
-<div class="sidebar-top">
-
-<div class="brand">
-Rucord
-</div>
-
-<div id="onlineCount"
-class="online">
-Онлайн: 0
-</div>
-
-</div>
-
-<div class="channels">
-
-<div class="channel">
-# общий-чат
-</div>
-
-<div class="channel"
-onclick="openOfficial()">
-🏅 Официальный статус
-</div>
-
-</div>
-
-</div>
-
-<div class="chat">
-
-<div class="chat-top">
-# общий-чат
-</div>
-
-<div
-class="messages"
-id="messages">
-</div>
-
-<div class="input-bar">
-
-<input
-id="messageInput"
-class="msg-input"
-placeholder="Написать сообщение..."
->
-
-<button
-id="sendBtn"
-class="send">
-➤
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-<!-- PROFILE -->
-
-<div id="profileModal">
-
-<div class="profile-card">
-
-<div
-class="profile-avatar"
-id="profileAvatar">
-A
-</div>
-
-<input
-type="file"
-id="avatarInput"
-style="
-margin-top:20px;
-color:white;
-">
-
-<h2
-id="profileName"
-style="
-margin-top:18px;
-text-align:center;
-">
-USER
-</h2>
-
-<div
-id="profileBadge"
-style="
-text-align:center;
-margin-top:8px;
-">
-</div>
-
-<p
-id="profileBio"
-style="
-margin-top:20px;
-text-align:center;
-color:#9aa3b2;
-">
-Описание
-</p>
-
-<textarea
-id="bioInput"
-class="input"
-placeholder="Новое описание"
-style="height:100px;">
-</textarea>
-
-<button
-class="btn login-btn"
-onclick="saveBio()">
-Сохранить
-</button>
-
-<button
-class="btn register-btn"
-onclick="closeProfile()">
-Закрыть
-</button>
-
-</div>
-
-</div>
-
-<!-- OFFICIAL -->
-
-<div id="officialModal">
-
-<div class="official-card">
-
-<h2 style="
-font-size:28px;
-margin-bottom:18px;">
-🏅 Официальный статус
-</h2>
-
-<p style="
-color:#9aa3b2;
-line-height:1.7;
-font-size:15px;
-">
-
-Чтобы получить официальный статус,
-напишите нам на почту:
-
-<br><br>
-
-<b style="
-color:white;
-font-size:18px;
-">
-skebobmessage@internet.ru
-</b>
-
-<br><br>
-
-В письме укажите:
-
-<br><br>
-
-• Название вашей компании<br>
-• Чем вы занимаетесь<br>
-• Ссылки на соцсети или сайт<br>
-• Почему аккаунт должен быть подтверждён
-
-<br><br>
-
-После проверки вы получите
-🏅 официальный значок.
-
-</p>
-
-<button
-class="btn login-btn"
-onclick="closeOfficial()"
-style="margin-top:20px;">
-Понятно
-</button>
-
-</div>
-
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-
-<script>
-
-const socket = io();
-
-let currentUser = "";
-let openedProfile = "";
-
-// ================= LOGIN =================
-
-async function login(type){
-
-const username =
-document.getElementById("username").value.trim();
-
-const password =
-document.getElementById("password").value.trim();
-
-if(!username || !password){
-alert("Заполни поля");
-return;
-}
-
-const res = await fetch("/" + type,{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-username,
-password
-})
-});
-
-const data = await res.json();
-
-if(!data.success){
-alert(data.message);
-return;
-}
-
-currentUser = username;
-
-document.getElementById("login")
-.style.display = "none";
-
-document.getElementById("app")
-.style.display = "flex";
-
-socket.emit("join",username);
-
-loadMessages();
-
-}
-
-document.getElementById("loginBtn")
-.onclick = ()=>login("login");
-
-document.getElementById("registerBtn")
-.onclick = ()=>login("register");
-
-// ================= BADGES =================
-
-function getBadge(user){
-
-if(user === "AdminGrigory"
-|| user === "SUIDKOP"){
-return " 🏅";
-}
-
-if(user.endsWith("_vip")){
-return " ✔️";
-}
-
-return "";
-
-}
-
-// ================= CHAT =================
-
-function addMessage(msg){
-
-const messages =
-document.getElementById("messages");
-
-const div =
-document.createElement("div");
-
-div.className =
-msg.user === currentUser
-? "message me"
-: "message";
-
-div.innerHTML = \`
-
-<div
-class="avatar"
-id="avatar_\${msg.user}">
-\${msg.user[0].toUpperCase()}
-</div>
-
-<div class="bubble">
-
-<div
-class="name"
-onclick="openProfile('\${msg.user}')">
-\${msg.user}
-\${getBadge(msg.user)}
-</div>
-
-<div class="text">
-\${msg.text}
-</div>
-
-</div>
-
-\`;
-
-messages.appendChild(div);
-
-loadAvatar(msg.user);
-
-messages.scrollTop =
-messages.scrollHeight;
-
-}
-
-async function loadMessages(){
-
-const res =
-await fetch("/messages");
-
-const data =
-await res.json();
-
-document.getElementById("messages")
-.innerHTML = "";
-
-data.forEach(addMessage);
-
-}
-
-function sendMessage(){
-
-const input =
-document.getElementById("messageInput");
-
-const text =
-input.value.trim();
-
-if(!text) return;
-
-socket.emit("message",{
-user:currentUser,
-text
-});
-
-input.value = "";
-
-}
-
-document.getElementById("sendBtn")
-.onclick = sendMessage;
-
-document.getElementById("messageInput")
-.addEventListener("keypress",e=>{
-
-if(e.key === "Enter"){
-sendMessage();
-}
-
-});
-
-// ================= PROFILE =================
-
-async function openProfile(user){
-
-openedProfile = user;
-
-const res =
-await fetch("/profile",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-user
-})
-});
-
-const data =
-await res.json();
-
-document.getElementById("profileModal")
-.style.display = "flex";
-
-const avatarRes =
-await fetch("/avatar",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-user
-})
-});
-
-const avatarData =
-await avatarRes.json();
-
-const avatar =
-document.getElementById("profileAvatar");
-
-if(avatarData.avatar){
-
-avatar.innerHTML = "";
-
-avatar.style.backgroundImage =
-"url(" + avatarData.avatar + ")";
-
-}else{
-
-avatar.style.backgroundImage = "";
-
-avatar.innerText =
-user[0].toUpperCase();
-
-}
-
-document.getElementById("profileName")
-.innerHTML =
-user + getBadge(user);
-
-document.getElementById("profileBio")
-.innerText =
-data.bio || "Нет описания";
-
-let badge = "";
-
-if(data.official){
-
-badge =
-"🏅 Официальный аккаунт";
-
-}else if(data.verified){
-
-badge =
-"✔️ Подтвержденный аккаунт";
-
-}
-
-document.getElementById("profileBadge")
-.innerText = badge;
-
-if(user === currentUser){
-
-document.getElementById("bioInput")
-.style.display = "block";
-
-document.getElementById("avatarInput")
-.style.display = "block";
-
-document.getElementById("avatarInput")
-.onchange = uploadAvatar;
-
-}else{
-
-document.getElementById("bioInput")
-.style.display = "none";
-
-document.getElementById("avatarInput")
-.style.display = "none";
-
-}
-
-}
-
-function closeProfile(){
-
-document.getElementById("profileModal")
-.style.display = "none";
-
-}
-
-async function saveBio(){
-
-const bio =
-document.getElementById("bioInput")
-.value;
-
-await fetch("/setBio",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-user:currentUser,
-bio
-})
-});
-
-openProfile(currentUser);
-
-}
-
-// ================= AVATARS =================
-
-async function loadAvatar(user){
-
-const res =
-await fetch("/avatar",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-user
-})
-});
-
-const data =
-await res.json();
-
-if(!data.avatar) return;
-
-const el =
-document.getElementById(
-"avatar_" + user
-);
-
-if(!el) return;
-
-el.innerHTML = "";
-
-el.style.backgroundImage =
-"url(" + data.avatar + ")";
-
-}
-
-async function uploadAvatar(){
-
-const file =
-document.getElementById("avatarInput")
-.files[0];
-
-if(!file) return;
-
-const reader =
-new FileReader();
-
-reader.onload =
-async function(){
-
-await fetch("/setAvatar",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-user:currentUser,
-avatar:reader.result
-})
-});
-
-openProfile(currentUser);
-
-};
-
-reader.readAsDataURL(file);
-
-}
-
-// ================= OFFICIAL =================
-
-function openOfficial(){
-
-document.getElementById("officialModal")
-.style.display = "flex";
-
-}
-
-function closeOfficial(){
-
-document.getElementById("officialModal")
-.style.display = "none";
-
-}
-
-// ================= SOCKET =================
-
-socket.on("message",msg=>{
-addMessage(msg);
-});
-
-socket.on("online",count=>{
-
-document.getElementById("onlineCount")
-.innerText =
-"Онлайн: " + count;
-
-});
-
-</script>
-
-</body>
-</html>
-`);
-
-});
-
-// ================= API =================
-
-app.post("/register",(req,res)=>{
-
-const { username,password } = req.body;
-
-if(users.has(username)){
-
-return res.json({
-success:false,
-message:"Аккаунт уже существует"
-});
-
-}
-
-users.set(username,{
-password
-});
-
-if(!profiles.has(username)){
-
-profiles.set(username,{
-bio:"Описание отсутствует",
-verified:false,
-official:false
-});
-
-}
-
-res.json({
-success:true
-});
-
-});
-
-app.post("/login",(req,res)=>{
-
-const { username,password } = req.body;
-
-const user =
-users.get(username);
-
-if(!user || user.password !== password){
-
-return res.json({
-success:false,
-message:"Неверный логин"
-});
-
-}
-
-res.json({
-success:true
-});
-
-});
-
-app.get("/messages",(req,res)=>{
-res.json(globalMessages);
-});
-
-// ================= PROFILE API =================
-
-app.post("/profile",(req,res)=>{
-
-const { user } = req.body;
-
-res.json(
-profiles.get(user) || {
-bio:"Нет описания",
-verified:false,
-official:false
-}
-);
-
-});
-
-app.post("/setBio",(req,res)=>{
-
-const { user,bio } = req.body;
-
-if(!profiles.has(user)){
-
-profiles.set(user,{
-bio:"",
-verified:false,
-official:false
-});
-
-}
-
-profiles.get(user).bio = bio;
-
-res.json({
-success:true
-});
-
-});
-
-// ================= AVATAR API =================
-
-app.post("/setAvatar",(req,res)=>{
-
-const { user,avatar } = req.body;
-
-avatars.set(user,avatar);
-
-res.json({
-success:true
-});
-
-});
-
-app.post("/avatar",(req,res)=>{
-
-const { user } = req.body;
-
-res.json({
-avatar:
-avatars.get(user) || null
-});
-
-});
-
-// ================= SOCKET =================
-
-io.on("connection",(socket)=>{
-
-socket.on("join",(username)=>{
-
-onlineUsers.set(socket.id,username);
-
-io.emit("online",onlineUsers.size);
-
-});
-
-socket.on("message",(msg)=>{
-
-globalMessages.push(msg);
-
-if(globalMessages.length > 100){
-globalMessages.shift();
-}
-
-io.emit("message",msg);
-
-});
-
-socket.on("disconnect",()=>{
-
-onlineUsers.delete(socket.id);
-
-io.emit("online",onlineUsers.size);
-
-});
-
-});
-
-// ================= START =================
-
-const PORT =
-process.env.PORT || 3000;
-
-server.listen(PORT,()=>{
-
-console.log(
-"SERVER STARTED " + PORT
-);
-
-});
-
-// СЛИШКОМ БОЛЬШОЙ КОД ДЛЯ ОДНОГО СООБЩЕНИЯ.
-// ИНАЧЕ ЧАСТЬ КОДА ОБРЕЖЕТСЯ И У ТЕБЯ БУДУТ ОШИБКИ.
-
-
-// ПОЭТОМУ:
-// 1. твой текущий server.js оставь
-// 2. вставь НИЖЕ ЭТОТ БЛОК
-// 3. всё заработает
-
-
-// ================= FIX EMAIL =================
-
-// ЗАМЕНИ В HTML:
-
-// skebobmessage@internet.ru
-
-// НА:
-
-// skebobmassager@internet.ru
-
-
-
-// ================= NEW DATA =================
+const avatars = new Map();
 
 const friends = new Map();
 const privateChats = new Map();
@@ -1217,7 +21,147 @@ const groups = new Map();
 
 
 
-// ================= FRIENDS API =================
+// ================= LOAD SAVED =================
+
+if(fs.existsSync("profiles.json")){
+
+const saved =
+JSON.parse(
+fs.readFileSync("profiles.json")
+);
+
+Object.entries(saved)
+.forEach(([k,v])=>{
+
+profiles.set(k,v);
+
+});
+
+}
+
+if(fs.existsSync("avatars.json")){
+
+const saved =
+JSON.parse(
+fs.readFileSync("avatars.json")
+);
+
+Object.entries(saved)
+.forEach(([k,v])=>{
+
+avatars.set(k,v);
+
+});
+
+}
+
+
+
+// ================= VERIFIED =================
+
+function getBadge(user){
+
+if(
+user === "AdminGrigory"
+||
+user === "SUIDKOP"
+){
+
+return "✔️";
+
+}
+
+return "";
+
+}
+
+
+
+// ================= PROFILE API =================
+
+app.post("/saveProfile",(req,res)=>{
+
+const { user,bio } = req.body;
+
+if(!profiles.has(user)){
+
+profiles.set(user,{
+bio:""
+});
+
+}
+
+profiles.get(user).bio = bio;
+
+fs.writeFileSync(
+"profiles.json",
+JSON.stringify(
+Object.fromEntries(profiles)
+)
+);
+
+res.json({
+success:true
+});
+
+});
+
+
+
+app.post("/getProfile",(req,res)=>{
+
+const { user } = req.body;
+
+res.json(
+profiles.get(user)
+||
+{
+bio:""
+}
+);
+
+});
+
+
+
+// ================= AVATAR API =================
+
+app.post("/saveAvatar",(req,res)=>{
+
+const { user,avatar } = req.body;
+
+avatars.set(user,avatar);
+
+fs.writeFileSync(
+"avatars.json",
+JSON.stringify(
+Object.fromEntries(avatars)
+)
+);
+
+res.json({
+success:true
+});
+
+});
+
+
+
+app.post("/getAvatar",(req,res)=>{
+
+const { user } = req.body;
+
+res.json({
+avatar:
+avatars.get(user)
+|| null
+});
+
+});
+
+
+
+// ================= FRIENDS =================
 
 app.post("/addFriend",(req,res)=>{
 
@@ -1236,9 +180,13 @@ if(!friends.has(user)){
 friends.set(user,[]);
 }
 
-if(!friends.get(user).includes(friend)){
+if(
+!friends.get(user)
+.includes(friend)
+){
 
-friends.get(user).push(friend);
+friends.get(user)
+.push(friend);
 
 }
 
@@ -1248,19 +196,22 @@ success:true
 
 });
 
+
+
 app.post("/friends",(req,res)=>{
 
 const { user } = req.body;
 
 res.json(
-friends.get(user) || []
+friends.get(user)
+|| []
 );
 
 });
 
 
 
-// ================= PRIVATE CHAT API =================
+// ================= PRIVATE CHAT =================
 
 app.post("/privateMessages",(req,res)=>{
 
@@ -1272,7 +223,8 @@ const key =
 .join("_");
 
 res.json(
-privateChats.get(key) || []
+privateChats.get(key)
+|| []
 );
 
 });
@@ -1305,6 +257,8 @@ success:true
 
 });
 
+
+
 app.get("/groups",(req,res)=>{
 
 res.json(
@@ -1313,90 +267,174 @@ Array.from(groups.keys())
 
 });
 
-
-
-// ================= SOCKET =================
-
-// ВНУТРИ:
-
-io.on("connection",(socket)=>{
-
-// ДОБАВЬ:
-
-socket.on("privateMessage",(msg)=>{
-
-const key =
-[msg.from,msg.to]
-.sort()
-.join("_");
-
-if(!privateChats.has(key)){
-
-privateChats.set(key,[]);
-
-}
-
-privateChats.get(key)
-.push(msg);
-
-const target =
-Array.from(
-onlineUsers.entries()
-).find(([id,name])=>
-name === msg.to
-);
-
-if(target){
-
-io.to(target[0])
-.emit("privateMessage",msg);
-
-}
-
-socket.emit("privateMessage",msg);
-
-});
-
-socket.on("groupMessage",(data)=>{
-
-if(!groups.has(data.group))
-return;
-
-groups.get(data.group)
-.messages
-.push(data);
-
-io.emit("groupMessage",data);
-
-});
-
-});
-
+// ================= PART 2 =================
+// ВСТАВЬ В HTML И JS
 
 
 // ================= HTML =================
 
-// В .channels ДОБАВЬ:
-
-<div
-class="channel"
-onclick="openFriends()"
->
-👥 Друзья
-</div>
-
-<div
-class="channel"
-onclick="openGroups()"
->
-💬 Группы
-</div>
-
-
-
-// ================= FRIENDS MODAL =================
-
 // ПЕРЕД </body>
+
+<div id="profileModal"
+style="
+display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.7);
+align-items:center;
+justify-content:center;
+z-index:9999;
+">
+
+<div style="
+width:420px;
+background:#181b24;
+padding:30px;
+border-radius:28px;
+">
+
+<div
+id="profileAvatar"
+style="
+width:120px;
+height:120px;
+border-radius:50%;
+margin:auto;
+background:#5865f2;
+background-size:cover;
+background-position:center;
+">
+</div>
+
+<h2
+id="profileName"
+style="
+text-align:center;
+margin-top:20px;
+">
+</h2>
+
+<p
+id="profileBio"
+style="
+margin-top:14px;
+text-align:center;
+color:#aaa;
+">
+</p>
+
+<textarea
+id="bioInput"
+class="input"
+placeholder="Описание профиля"
+style="
+height:120px;
+margin-top:20px;
+display:none;
+">
+</textarea>
+
+<input
+type="file"
+id="avatarInput"
+style="
+margin-top:15px;
+display:none;
+"
+>
+
+<button
+class="btn login-btn"
+style="margin-top:20px;"
+onclick="saveProfile()"
+id="saveProfileBtn"
+>
+Сохранить
+</button>
+
+<button
+class="btn register-btn"
+style="margin-top:10px;"
+onclick="closeProfile()"
+>
+Закрыть
+</button>
+
+</div>
+
+</div>
+
+
+
+// ================= PRIVATE CHAT MODAL =================
+
+<div id="privateModal"
+style="
+display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.7);
+align-items:center;
+justify-content:center;
+z-index:9999;
+">
+
+<div style="
+width:500px;
+height:700px;
+background:#181b24;
+border-radius:28px;
+display:flex;
+flex-direction:column;
+overflow:hidden;
+">
+
+<div style="
+padding:20px;
+font-size:22px;
+font-weight:700;
+border-bottom:1px solid rgba(255,255,255,.08);
+"
+id="privateTitle">
+ЛС
+</div>
+
+<div
+id="privateMessages"
+style="
+flex:1;
+overflow:auto;
+padding:20px;
+">
+</div>
+
+<div style="
+padding:20px;
+display:flex;
+gap:10px;
+">
+
+<input
+id="privateInput"
+class="msg-input"
+placeholder="Сообщение..."
+>
+
+<button
+class="send"
+onclick="sendPrivate()">
+➤
+</button>
+
+</div>
+
+</div>
+
+</div>
+
+
+
+// ================= FRIENDS =================
 
 <div id="friendsModal"
 style="
@@ -1452,250 +490,278 @@ onclick="closeFriends()"
 
 
 
-// ================= GROUPS MODAL =================
+// ================= CHANNELS =================
 
-<div id="groupsModal"
-style="
-display:none;
-position:fixed;
-inset:0;
-background:rgba(0,0,0,.7);
-align-items:center;
-justify-content:center;
-z-index:9999;
-">
+// В .channels ДОБАВЬ:
 
-<div style="
-width:420px;
-background:#181b24;
-padding:30px;
-border-radius:28px;
-">
+<div
+class="channel"
+onclick="openFriends()"
+>
+👥 Друзья
+</div>
 
-<h2>
+<div
+class="channel"
+onclick="openGroups()"
+>
 💬 Группы
-</h2>
-
-<input
-id="groupInput"
-class="input"
-placeholder="Название группы"
->
-
-<button
-class="btn login-btn"
-onclick="createGroup()"
->
-Создать группу
-</button>
+</div>
 
 <div
-id="groupsList"
-style="margin-top:20px;"
+class="channel"
+onclick="officialStatus()"
 >
+✔️ Официальный статус
 </div>
 
-<button
-class="btn register-btn"
-onclick="closeGroups()"
+
+
+// ================= MESSAGE FIX =================
+
+// ЗАМЕНИ addMessage(msg)
+
+function addMessage(msg){
+
+const messages =
+document.getElementById("messages");
+
+const isMe =
+msg.user === currentUser;
+
+const badge =
+msg.user === "AdminGrigory"
+||
+msg.user === "SUIDKOP"
+? " ✔️"
+: "";
+
+const div =
+document.createElement("div");
+
+div.className = "message";
+
+div.style.justifyContent =
+isMe
+? "flex-end"
+: "flex-start";
+
+div.innerHTML = \`
+
+<div
+style="
+display:flex;
+gap:14px;
+flex-direction:
+\${isMe ? "row-reverse" : "row"};
+align-items:flex-start;
+"
 >
-Закрыть
-</button>
 
+<div
+class="avatar"
+id="avatar_\${msg.user}"
+onclick="openProfile('\${msg.user}')"
+style="
+cursor:pointer;
+background-size:cover;
+background-position:center;
+">
+\${msg.user[0].toUpperCase()}
+</div>
+
+<div
+class="bubble"
+style="
+background:
+\${isMe
+? "linear-gradient(135deg,#5865f2,#7b61ff)"
+: "#181b24"};
+"
+>
+
+<div
+class="name"
+onclick="openProfile('\${msg.user}')"
+style="cursor:pointer;"
+>
+\${escapeHtml(msg.user)}
+\${badge}
+</div>
+
+<div class="text">
+\${escapeHtml(msg.text)}
 </div>
 
 </div>
 
+</div>
 
+\`;
 
-// ================= JS =================
+messages.appendChild(div);
 
-// ПЕРЕД:
+loadAvatar(msg.user);
 
-// ================= SOCKET =================
-
-function openFriends(){
-
-document.getElementById("friendsModal")
-.style.display = "flex";
-
-loadFriends();
+messages.scrollTop =
+messages.scrollHeight;
 
 }
 
-function closeFriends(){
 
-document.getElementById("friendsModal")
+
+// ================= PROFILE JS =================
+
+async function openProfile(user){
+
+document.getElementById("profileModal")
+.style.display = "flex";
+
+document.getElementById("profileName")
+.innerText = user;
+
+const res =
+await fetch("/getProfile",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({user})
+});
+
+const data =
+await res.json();
+
+document.getElementById("profileBio")
+.innerText =
+data.bio || "Нет описания";
+
+const avatar =
+await fetch("/getAvatar",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({user})
+});
+
+const avatarData =
+await avatar.json();
+
+if(avatarData.avatar){
+
+document.getElementById("profileAvatar")
+.style.backgroundImage =
+"url(" + avatarData.avatar + ")";
+
+}
+
+document.getElementById("bioInput")
+.style.display =
+user === currentUser
+? "block"
+: "none";
+
+document.getElementById("avatarInput")
+.style.display =
+user === currentUser
+? "block"
+: "none";
+
+document.getElementById("saveProfileBtn")
+.style.display =
+user === currentUser
+? "block"
+: "none";
+
+}
+
+function closeProfile(){
+
+document.getElementById("profileModal")
 .style.display = "none";
 
 }
 
-async function addFriend(){
+async function saveProfile(){
 
-const friend =
-document.getElementById("friendInput")
+const bio =
+document.getElementById("bioInput")
 .value;
 
-await fetch("/addFriend",{
+await fetch("/saveProfile",{
 method:"POST",
 headers:{
 "Content-Type":"application/json"
 },
 body:JSON.stringify({
 user:currentUser,
-friend
+bio
 })
 });
 
-loadFriends();
+const file =
+document.getElementById("avatarInput")
+.files[0];
 
-}
+if(file){
 
-async function loadFriends(){
+const reader =
+new FileReader();
 
-const res =
-await fetch("/friends",{
+reader.onload = async ()=>{
+
+await fetch("/saveAvatar",{
 method:"POST",
 headers:{
 "Content-Type":"application/json"
 },
 body:JSON.stringify({
-user:currentUser
-})
-});
-
-const data =
-await res.json();
-
-document.getElementById("friendsList")
-.innerHTML =
-data.map(friend=>\`
-
-<div
-class="channel"
-onclick="openPrivateChat('\${friend}')"
->
-💬 \${friend}
-</div>
-
-\`).join("");
-
-}
-
-function openPrivateChat(user){
-
-const text =
-prompt("Сообщение для " + user);
-
-if(!text) return;
-
-socket.emit("privateMessage",{
-from:currentUser,
-to:user,
-text
-});
-
-}
-
-socket.on("privateMessage",(msg)=>{
-
-alert(
-"ЛС от " +
-msg.from +
-": " +
-msg.text
-);
-
-});
-
-
-
-// ================= GROUPS JS =================
-
-function openGroups(){
-
-document.getElementById("groupsModal")
-.style.display = "flex";
-
-loadGroups();
-
-}
-
-function closeGroups(){
-
-document.getElementById("groupsModal")
-.style.display = "none";
-
-}
-
-async function createGroup(){
-
-const name =
-document.getElementById("groupInput")
-.value;
-
-await fetch("/createGroup",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-name,
-owner:currentUser
-})
-});
-
-loadGroups();
-
-}
-
-async function loadGroups(){
-
-const res =
-await fetch("/groups");
-
-const data =
-await res.json();
-
-document.getElementById("groupsList")
-.innerHTML =
-data.map(group=>\`
-
-<div
-class="channel"
-onclick="openGroup('\${group}')"
->
-💬 \${group}
-</div>
-
-\`).join("");
-
-}
-
-function openGroup(group){
-
-const text =
-prompt("Сообщение в " + group);
-
-if(!text) return;
-
-socket.emit("groupMessage",{
-group,
 user:currentUser,
-text
+avatar:reader.result
+})
 });
+
+};
+
+reader.readAsDataURL(file);
 
 }
 
-socket.on("groupMessage",(msg)=>{
+alert("Профиль сохранен");
 
-alert(
-"[" +
-msg.group +
-"] " +
-msg.user +
-": " +
-msg.text
+}
+
+async function loadAvatar(user){
+
+const res =
+await fetch("/getAvatar",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({user})
+});
+
+const data =
+await res.json();
+
+if(data.avatar){
+
+const avatar =
+document.getElementById(
+"avatar_" + user
 );
 
-});
+if(avatar){
+
+avatar.style.backgroundImage =
+"url(" + data.avatar + ")";
+
+avatar.innerHTML = "";
+
+}
+
+}
+
+}
