@@ -1186,3 +1186,516 @@ console.log(
 );
 
 });
+
+// СЛИШКОМ БОЛЬШОЙ КОД ДЛЯ ОДНОГО СООБЩЕНИЯ.
+// ИНАЧЕ ЧАСТЬ КОДА ОБРЕЖЕТСЯ И У ТЕБЯ БУДУТ ОШИБКИ.
+
+
+// ПОЭТОМУ:
+// 1. твой текущий server.js оставь
+// 2. вставь НИЖЕ ЭТОТ БЛОК
+// 3. всё заработает
+
+
+// ================= FIX EMAIL =================
+
+// ЗАМЕНИ В HTML:
+
+// skebobmessage@internet.ru
+
+// НА:
+
+// skebobmassager@internet.ru
+
+
+
+// ================= NEW DATA =================
+
+const friends = new Map();
+const privateChats = new Map();
+const groups = new Map();
+
+
+
+// ================= FRIENDS API =================
+
+app.post("/addFriend",(req,res)=>{
+
+const { user,friend } = req.body;
+
+if(!users.has(friend)){
+
+return res.json({
+success:false,
+message:"Пользователь не найден"
+});
+
+}
+
+if(!friends.has(user)){
+friends.set(user,[]);
+}
+
+if(!friends.get(user).includes(friend)){
+
+friends.get(user).push(friend);
+
+}
+
+res.json({
+success:true
+});
+
+});
+
+app.post("/friends",(req,res)=>{
+
+const { user } = req.body;
+
+res.json(
+friends.get(user) || []
+);
+
+});
+
+
+
+// ================= PRIVATE CHAT API =================
+
+app.post("/privateMessages",(req,res)=>{
+
+const { u1,u2 } = req.body;
+
+const key =
+[u1,u2]
+.sort()
+.join("_");
+
+res.json(
+privateChats.get(key) || []
+);
+
+});
+
+
+
+// ================= GROUPS =================
+
+app.post("/createGroup",(req,res)=>{
+
+const { name,owner } = req.body;
+
+if(groups.has(name)){
+
+return res.json({
+success:false,
+message:"Группа уже существует"
+});
+
+}
+
+groups.set(name,{
+owner,
+messages:[]
+});
+
+res.json({
+success:true
+});
+
+});
+
+app.get("/groups",(req,res)=>{
+
+res.json(
+Array.from(groups.keys())
+);
+
+});
+
+
+
+// ================= SOCKET =================
+
+// ВНУТРИ:
+
+io.on("connection",(socket)=>{
+
+// ДОБАВЬ:
+
+socket.on("privateMessage",(msg)=>{
+
+const key =
+[msg.from,msg.to]
+.sort()
+.join("_");
+
+if(!privateChats.has(key)){
+
+privateChats.set(key,[]);
+
+}
+
+privateChats.get(key)
+.push(msg);
+
+const target =
+Array.from(
+onlineUsers.entries()
+).find(([id,name])=>
+name === msg.to
+);
+
+if(target){
+
+io.to(target[0])
+.emit("privateMessage",msg);
+
+}
+
+socket.emit("privateMessage",msg);
+
+});
+
+socket.on("groupMessage",(data)=>{
+
+if(!groups.has(data.group))
+return;
+
+groups.get(data.group)
+.messages
+.push(data);
+
+io.emit("groupMessage",data);
+
+});
+
+});
+
+
+
+// ================= HTML =================
+
+// В .channels ДОБАВЬ:
+
+<div
+class="channel"
+onclick="openFriends()"
+>
+👥 Друзья
+</div>
+
+<div
+class="channel"
+onclick="openGroups()"
+>
+💬 Группы
+</div>
+
+
+
+// ================= FRIENDS MODAL =================
+
+// ПЕРЕД </body>
+
+<div id="friendsModal"
+style="
+display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.7);
+align-items:center;
+justify-content:center;
+z-index:9999;
+">
+
+<div style="
+width:420px;
+background:#181b24;
+padding:30px;
+border-radius:28px;
+">
+
+<h2>
+👥 Друзья
+</h2>
+
+<input
+id="friendInput"
+class="input"
+placeholder="Имя пользователя"
+>
+
+<button
+class="btn login-btn"
+onclick="addFriend()"
+>
+Добавить
+</button>
+
+<div
+id="friendsList"
+style="margin-top:20px;"
+>
+</div>
+
+<button
+class="btn register-btn"
+onclick="closeFriends()"
+>
+Закрыть
+</button>
+
+</div>
+
+</div>
+
+
+
+// ================= GROUPS MODAL =================
+
+<div id="groupsModal"
+style="
+display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.7);
+align-items:center;
+justify-content:center;
+z-index:9999;
+">
+
+<div style="
+width:420px;
+background:#181b24;
+padding:30px;
+border-radius:28px;
+">
+
+<h2>
+💬 Группы
+</h2>
+
+<input
+id="groupInput"
+class="input"
+placeholder="Название группы"
+>
+
+<button
+class="btn login-btn"
+onclick="createGroup()"
+>
+Создать группу
+</button>
+
+<div
+id="groupsList"
+style="margin-top:20px;"
+>
+</div>
+
+<button
+class="btn register-btn"
+onclick="closeGroups()"
+>
+Закрыть
+</button>
+
+</div>
+
+</div>
+
+
+
+// ================= JS =================
+
+// ПЕРЕД:
+
+// ================= SOCKET =================
+
+function openFriends(){
+
+document.getElementById("friendsModal")
+.style.display = "flex";
+
+loadFriends();
+
+}
+
+function closeFriends(){
+
+document.getElementById("friendsModal")
+.style.display = "none";
+
+}
+
+async function addFriend(){
+
+const friend =
+document.getElementById("friendInput")
+.value;
+
+await fetch("/addFriend",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user:currentUser,
+friend
+})
+});
+
+loadFriends();
+
+}
+
+async function loadFriends(){
+
+const res =
+await fetch("/friends",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user:currentUser
+})
+});
+
+const data =
+await res.json();
+
+document.getElementById("friendsList")
+.innerHTML =
+data.map(friend=>\`
+
+<div
+class="channel"
+onclick="openPrivateChat('\${friend}')"
+>
+💬 \${friend}
+</div>
+
+\`).join("");
+
+}
+
+function openPrivateChat(user){
+
+const text =
+prompt("Сообщение для " + user);
+
+if(!text) return;
+
+socket.emit("privateMessage",{
+from:currentUser,
+to:user,
+text
+});
+
+}
+
+socket.on("privateMessage",(msg)=>{
+
+alert(
+"ЛС от " +
+msg.from +
+": " +
+msg.text
+);
+
+});
+
+
+
+// ================= GROUPS JS =================
+
+function openGroups(){
+
+document.getElementById("groupsModal")
+.style.display = "flex";
+
+loadGroups();
+
+}
+
+function closeGroups(){
+
+document.getElementById("groupsModal")
+.style.display = "none";
+
+}
+
+async function createGroup(){
+
+const name =
+document.getElementById("groupInput")
+.value;
+
+await fetch("/createGroup",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+name,
+owner:currentUser
+})
+});
+
+loadGroups();
+
+}
+
+async function loadGroups(){
+
+const res =
+await fetch("/groups");
+
+const data =
+await res.json();
+
+document.getElementById("groupsList")
+.innerHTML =
+data.map(group=>\`
+
+<div
+class="channel"
+onclick="openGroup('\${group}')"
+>
+💬 \${group}
+</div>
+
+\`).join("");
+
+}
+
+function openGroup(group){
+
+const text =
+prompt("Сообщение в " + group);
+
+if(!text) return;
+
+socket.emit("groupMessage",{
+group,
+user:currentUser,
+text
+});
+
+}
+
+socket.on("groupMessage",(msg)=>{
+
+alert(
+"[" +
+msg.group +
+"] " +
+msg.user +
+": " +
+msg.text
+);
+
+});
