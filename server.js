@@ -9,7 +9,7 @@ const io = new Server(server,{
 cors:{ origin:"*" }
 });
 
-app.use(express.json());
+app.use(express.json({ limit:"50mb" }));
 
 // ================= DATA =================
 
@@ -17,6 +17,20 @@ const users = new Map();
 const globalMessages = [];
 const onlineUsers = new Map();
 const friends = new Map();
+
+const profiles = new Map();
+
+profiles.set("AdminGrigory",{
+bio:"Основатель Rucord",
+verified:true,
+official:true
+});
+
+profiles.set("SUIDKOP",{
+bio:"Официальный аккаунт",
+verified:true,
+official:true
+});
 
 // ================= HTML =================
 
@@ -27,6 +41,7 @@ res.send(`
 <html lang="ru">
 
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 
@@ -38,7 +53,7 @@ res.send(`
 margin:0;
 padding:0;
 box-sizing:border-box;
-font-family:Arial;
+font-family:Inter,sans-serif;
 }
 
 body{
@@ -53,25 +68,40 @@ overflow:hidden;
 #login{
 position:fixed;
 inset:0;
+background:
+radial-gradient(circle at top left,#5865f2 0%,transparent 30%),
+radial-gradient(circle at bottom right,#8f3dff 0%,transparent 30%),
+#0f1117;
 display:flex;
 align-items:center;
 justify-content:center;
-background:#0f1117;
 z-index:100;
 }
 
 .login-box{
-width:360px;
-background:#161922;
+width:380px;
+background:rgba(20,22,30,.92);
+border:1px solid rgba(255,255,255,.08);
+backdrop-filter:blur(20px);
 padding:40px;
-border-radius:24px;
+border-radius:28px;
+box-shadow:0 0 60px rgba(88,101,242,.25);
 }
 
 .logo{
 font-size:42px;
 font-weight:800;
+margin-bottom:10px;
 text-align:center;
-margin-bottom:20px;
+background:linear-gradient(90deg,#fff,#8ea1ff);
+-webkit-background-clip:text;
+-webkit-text-fill-color:transparent;
+}
+
+.sub{
+text-align:center;
+color:#8f96a3;
+margin-bottom:30px;
 }
 
 .input{
@@ -79,30 +109,33 @@ width:100%;
 padding:16px;
 border:none;
 outline:none;
-background:#1f2430;
+background:#161922;
 color:white;
 border-radius:16px;
 margin-bottom:14px;
+font-size:15px;
 }
 
 .btn{
 width:100%;
-padding:16px;
+padding:15px;
 border:none;
 border-radius:16px;
-cursor:pointer;
 font-weight:700;
-margin-top:10px;
+cursor:pointer;
+font-size:15px;
 }
 
 .login-btn{
 background:#5865f2;
 color:white;
+margin-top:5px;
 }
 
 .register-btn{
-background:#2a2f3d;
-color:white;
+margin-top:10px;
+background:#232734;
+color:#cfd3dc;
 }
 
 /* APP */
@@ -115,38 +148,51 @@ height:100vh;
 /* SIDEBAR */
 
 .sidebar{
-width:260px;
+width:300px;
 background:#12141c;
-padding:20px;
-overflow:auto;
+border-right:1px solid rgba(255,255,255,.05);
+display:flex;
+flex-direction:column;
+}
+
+.sidebar-top{
+padding:24px;
+border-bottom:1px solid rgba(255,255,255,.05);
 }
 
 .brand{
 font-size:28px;
 font-weight:800;
-margin-bottom:10px;
 }
 
 .online{
-margin-bottom:20px;
-color:#8b93a7;
+margin-top:8px;
+color:#7d8594;
+font-size:14px;
+}
+
+.channels{
+padding:15px;
+overflow:auto;
 }
 
 .channel{
-padding:14px;
-background:#1b1f2a;
-border-radius:14px;
+padding:16px;
+background:#181b24;
+border-radius:18px;
 margin-bottom:10px;
 cursor:pointer;
 transition:.2s;
+font-weight:600;
 }
 
 .channel:hover{
-background:#2b3142;
+background:#202432;
+transform:translateX(4px);
 }
 
 .channel.active{
-background:#5865f2;
+background:linear-gradient(90deg,#5865f2,#7b61ff);
 }
 
 /* CHAT */
@@ -155,32 +201,39 @@ background:#5865f2;
 flex:1;
 display:flex;
 flex-direction:column;
+background:#0f1117;
 }
 
 .chat-top{
-height:80px;
+height:85px;
+border-bottom:1px solid rgba(255,255,255,.05);
 display:flex;
 align-items:center;
-padding:0 24px;
-border-bottom:1px solid rgba(255,255,255,.05);
+justify-content:space-between;
+padding:0 30px;
+background:rgba(255,255,255,.02);
+backdrop-filter:blur(10px);
+}
+
+.chat-title{
 font-size:24px;
 font-weight:700;
 }
 
+/* MESSAGES */
+
 .messages{
 flex:1;
 overflow:auto;
-padding:20px;
+padding:30px;
 display:flex;
 flex-direction:column;
-gap:16px;
+gap:18px;
 }
-
-/* MESSAGE */
 
 .message{
 display:flex;
-gap:12px;
+gap:14px;
 align-items:flex-start;
 }
 
@@ -189,26 +242,27 @@ flex-direction:row-reverse;
 }
 
 .avatar{
-width:46px;
-height:46px;
+width:48px;
+height:48px;
 border-radius:50%;
-background:#5865f2;
+background:linear-gradient(135deg,#5865f2,#8f3dff);
 display:flex;
 align-items:center;
 justify-content:center;
 font-weight:800;
+font-size:18px;
 flex-shrink:0;
 }
 
 .message.me .avatar{
-background:#ff4fd8;
+background:linear-gradient(135deg,#ff4fd8,#ff7b7b);
 }
 
 .bubble{
-background:#1b1f2a;
-padding:14px;
-border-radius:18px;
-max-width:600px;
+background:#181b24;
+padding:16px;
+border-radius:20px;
+max-width:700px;
 }
 
 .message.me .bubble{
@@ -217,13 +271,19 @@ background:linear-gradient(135deg,#5865f2,#7b61ff);
 
 .name{
 font-weight:700;
-margin-bottom:6px;
-color:#9ba8ff;
+margin-bottom:8px;
+color:#aab2ff;
+cursor:pointer;
 }
 
 .message.me .name{
 color:white;
 text-align:right;
+}
+
+.text{
+line-height:1.5;
+font-size:15px;
 }
 
 .message.me .text{
@@ -233,46 +293,107 @@ text-align:right;
 /* INPUT */
 
 .input-bar{
-padding:20px;
+padding:24px;
+border-top:1px solid rgba(255,255,255,.05);
 display:flex;
-gap:12px;
+gap:16px;
 background:#12141c;
 }
 
 .msg-input{
 flex:1;
-padding:18px;
+background:#1a1d27;
 border:none;
 outline:none;
-background:#1b1f2a;
+padding:18px;
+border-radius:20px;
 color:white;
-border-radius:18px;
+font-size:15px;
 }
 
 .send{
 width:70px;
 border:none;
-border-radius:18px;
-background:#5865f2;
+border-radius:20px;
+background:linear-gradient(135deg,#5865f2,#7b61ff);
 color:white;
-font-size:20px;
+font-size:18px;
 cursor:pointer;
+font-weight:800;
 }
 
-/* FRIENDS */
+/* PROFILE */
 
-.friend{
-padding:14px;
-background:#1b1f2a;
-border-radius:14px;
-margin-top:10px;
+#profileModal{
+display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.6);
+align-items:center;
+justify-content:center;
+z-index:999;
 }
 
-.hidden{
+.profile-card{
+width:340px;
+background:#181b24;
+border-radius:28px;
+padding:30px;
+}
+
+.profile-avatar{
+width:90px;
+height:90px;
+border-radius:50%;
+background:linear-gradient(135deg,#5865f2,#8f3dff);
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:36px;
+font-weight:800;
+margin:auto;
+}
+
+.profile-name{
+margin-top:18px;
+text-align:center;
+font-size:28px;
+font-weight:800;
+}
+
+.profile-badge{
+text-align:center;
+margin-top:8px;
+font-size:14px;
+}
+
+.profile-bio{
+margin-top:20px;
+text-align:center;
+color:#9aa3b2;
+line-height:1.5;
+}
+
+/* MOBILE */
+
+@media(max-width:800px){
+
+.sidebar{
 display:none;
 }
 
+.messages{
+padding:16px;
+}
+
+.input-bar{
+padding:16px;
+}
+
+}
+
 </style>
+
 </head>
 
 <body>
@@ -285,6 +406,10 @@ display:none;
 
 <div class="logo">Rucord X</div>
 
+<div class="sub">
+Новый уровень общения
+</div>
+
 <input
 id="username"
 class="input"
@@ -293,8 +418,8 @@ placeholder="Имя"
 
 <input
 id="password"
-type="password"
 class="input"
+type="password"
 placeholder="Пароль"
 >
 
@@ -309,7 +434,7 @@ class="btn login-btn"
 id="registerBtn"
 class="btn register-btn"
 >
-Регистрация
+Создать аккаунт
 </button>
 
 </div>
@@ -322,6 +447,8 @@ class="btn register-btn"
 
 <div class="sidebar">
 
+<div class="sidebar-top">
+
 <div class="brand">
 Rucord
 </div>
@@ -333,25 +460,22 @@ id="onlineCount"
 Онлайн: 0
 </div>
 
-<div
-class="channel active"
-onclick="openTab('chat')"
->
-💬 Чат
 </div>
 
-<div
-class="channel"
-onclick="openTab('friends')"
->
-👥 Друзья
+<div class="channels">
+
+<div class="channel active">
+# общий-чат
 </div>
 
-<div
-class="channel"
-onclick="openTab('ai')"
->
-🤖 AI
+<div class="channel">
+👥 друзья
+</div>
+
+<div class="channel">
+🤖 ai
+</div>
+
 </div>
 
 </div>
@@ -359,56 +483,17 @@ onclick="openTab('ai')"
 <div class="chat">
 
 <div class="chat-top">
-Rucord X
+
+<div class="chat-title">
+# общий-чат
 </div>
 
-<!-- CHAT -->
+</div>
 
 <div
 class="messages"
 id="messages"
 ></div>
-
-<!-- FRIENDS -->
-
-<div
-class="messages hidden"
-id="friendsTab"
->
-
-<h2>Друзья</h2>
-
-<div id="friendsList"></div>
-
-<br>
-
-<input
-id="friendInput"
-class="msg-input"
-placeholder="Имя друга"
->
-
-<br><br>
-
-<button
-class="send"
-onclick="addFriend()"
->
-+
-</button>
-
-</div>
-
-<!-- AI -->
-
-<div
-class="messages hidden"
-id="aiTab"
->
-
-<div id="aiMessages"></div>
-
-</div>
 
 <div class="input-bar">
 
@@ -431,6 +516,64 @@ class="send"
 
 </div>
 
+<!-- PROFILE -->
+
+<div id="profileModal">
+
+<div class="profile-card">
+
+<div
+class="profile-avatar"
+id="profileAvatar"
+>
+A
+</div>
+
+<div
+class="profile-name"
+id="profileName"
+>
+USER
+</div>
+
+<div
+class="profile-badge"
+id="profileBadge"
+>
+</div>
+
+<div
+class="profile-bio"
+id="profileBio"
+>
+Описание
+</div>
+
+<textarea
+id="bioInput"
+class="input"
+placeholder="Новое описание"
+style="margin-top:20px;height:100px;"
+></textarea>
+
+<button
+class="btn login-btn"
+onclick="saveBio()"
+>
+Сохранить
+</button>
+
+<button
+class="btn register-btn"
+onclick="closeProfile()"
+>
+Закрыть
+</button>
+
+</div>
+
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
@@ -438,6 +581,7 @@ class="send"
 const socket = io();
 
 let currentUser = "";
+let openedProfile = "";
 
 // ================= LOGIN =================
 
@@ -483,43 +627,30 @@ document.getElementById("app")
 socket.emit("join",username);
 
 loadMessages();
-loadFriends();
 
 }
 
 document.getElementById("loginBtn")
-.onclick = ()=>login("login");
+.onclick = () => login("login");
 
 document.getElementById("registerBtn")
-.onclick = ()=>login("register");
+.onclick = () => login("register");
 
-// ================= TABS =================
+// ================= BADGES =================
 
-function openTab(tab){
+function getBadge(user){
 
-document.getElementById("messages")
-.classList.add("hidden");
+if(user === "AdminGrigory"
+|| user === "SUIDKOP"){
 
-document.getElementById("friendsTab")
-.classList.add("hidden");
-
-document.getElementById("aiTab")
-.classList.add("hidden");
-
-if(tab === "chat"){
-document.getElementById("messages")
-.classList.remove("hidden");
+return " 🏅";
 }
 
-if(tab === "friends"){
-document.getElementById("friendsTab")
-.classList.remove("hidden");
+if(user.endsWith("_vip")){
+return " ✔️";
 }
 
-if(tab === "ai"){
-document.getElementById("aiTab")
-.classList.remove("hidden");
-}
+return "";
 
 }
 
@@ -539,21 +670,27 @@ msg.user === currentUser
 : "message";
 
 div.innerHTML = \`
+
 <div class="avatar">
 \${msg.user[0].toUpperCase()}
 </div>
 
 <div class="bubble">
 
-<div class="name">
-\${msg.user}
+<div
+class="name"
+onclick="openProfile('\${msg.user}')"
+>
+\${escapeHtml(msg.user)}
+\${getBadge(msg.user)}
 </div>
 
 <div class="text">
-\${msg.text}
+\${escapeHtml(msg.text)}
 </div>
 
 </div>
+
 \`;
 
 messages.appendChild(div);
@@ -563,13 +700,18 @@ messages.scrollHeight;
 
 }
 
+function escapeHtml(text){
+
+return text
+.replace(/</g,"&lt;")
+.replace(/>/g,"&gt;");
+
+}
+
 async function loadMessages(){
 
-const res =
-await fetch("/messages");
-
-const data =
-await res.json();
+const res = await fetch("/messages");
+const data = await res.json();
 
 document.getElementById("messages")
 .innerHTML = "";
@@ -609,109 +751,93 @@ sendMessage();
 
 });
 
-// ================= AI =================
+// ================= PROFILE =================
 
-function sendAI(){
+async function openProfile(user){
 
-const text =
-document.getElementById("messageInput")
-.value;
+openedProfile = user;
 
-socket.emit("ai",{
-user:currentUser,
-text
+const res = await fetch("/profile",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user
+})
 });
+
+const data = await res.json();
+
+document.getElementById("profileModal")
+.style.display = "flex";
+
+document.getElementById("profileAvatar")
+.innerText =
+user[0].toUpperCase();
+
+document.getElementById("profileName")
+.innerHTML =
+user + getBadge(user);
+
+document.getElementById("profileBio")
+.innerText =
+data.bio || "Нет описания";
+
+let badge = "";
+
+if(data.official){
+
+badge = "🏅 Официальный аккаунт";
+
+}else if(data.verified){
+
+badge = "✔️ Подтвержденный аккаунт";
 
 }
 
-socket.on("ai",msg=>{
+document.getElementById("profileBadge")
+.innerText = badge;
 
-const div =
-document.createElement("div");
+if(user === currentUser){
 
-div.className = "bubble";
+document.getElementById("bioInput")
+.style.display = "block";
 
-div.innerHTML = \`
-<div class="name">
-AI
-</div>
+}else{
 
-<div class="text">
-\${msg.text}
-</div>
-\`;
+document.getElementById("bioInput")
+.style.display = "none";
 
-document.getElementById("aiMessages")
-.appendChild(div);
+}
 
-});
+}
 
-// ================= FRIENDS =================
+function closeProfile(){
 
-async function addFriend(){
+document.getElementById("profileModal")
+.style.display = "none";
 
-const friend =
-document.getElementById("friendInput")
+}
+
+async function saveBio(){
+
+const bio =
+document.getElementById("bioInput")
 .value;
 
-const res =
-await fetch("/addFriend",{
+await fetch("/setBio",{
 method:"POST",
 headers:{
 "Content-Type":"application/json"
 },
 body:JSON.stringify({
 user:currentUser,
-friend
+bio
 })
 });
 
-const data =
-await res.json();
-
-alert(
-data.success
-? "Друг добавлен"
-: data.message
-);
-
-loadFriends();
-
-}
-
-async function loadFriends(){
-
-const res =
-await fetch("/friends",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-user:currentUser
-})
-});
-
-const data =
-await res.json();
-
-const list =
-document.getElementById("friendsList");
-
-list.innerHTML = "";
-
-data.forEach(friend=>{
-
-const div =
-document.createElement("div");
-
-div.className = "friend";
-
-div.innerText = "👤 " + friend;
-
-list.appendChild(div);
-
-});
+openProfile(currentUser);
 
 }
 
@@ -756,6 +882,16 @@ users.set(username,{
 password
 });
 
+if(!profiles.has(username)){
+
+profiles.set(username,{
+bio:"Описание отсутствует",
+verified:false,
+official:false
+});
+
+}
+
 res.json({
 success:true
 });
@@ -766,8 +902,7 @@ app.post("/login",(req,res)=>{
 
 const { username,password } = req.body;
 
-const user =
-users.get(username);
+const user = users.get(username);
 
 if(!user || user.password !== password){
 
@@ -788,40 +923,41 @@ app.get("/messages",(req,res)=>{
 res.json(globalMessages);
 });
 
-// ================= FRIENDS =================
+// ================= PROFILE API =================
 
-app.post("/addFriend",(req,res)=>{
-
-const { user,friend } = req.body;
-
-if(!users.has(friend)){
-
-return res.json({
-success:false,
-message:"Пользователь не найден"
-});
-
-}
-
-if(!friends.has(user)){
-friends.set(user,[]);
-}
-
-friends.get(user).push(friend);
-
-res.json({
-success:true
-});
-
-});
-
-app.post("/friends",(req,res)=>{
+app.post("/profile",(req,res)=>{
 
 const { user } = req.body;
 
 res.json(
-friends.get(user) || []
+profiles.get(user) || {
+bio:"Нет описания",
+verified:false,
+official:false
+}
 );
+
+});
+
+app.post("/setBio",(req,res)=>{
+
+const { user,bio } = req.body;
+
+if(!profiles.has(user)){
+
+profiles.set(user,{
+bio:"",
+verified:false,
+official:false
+});
+
+}
+
+profiles.get(user).bio = bio;
+
+res.json({
+success:true
+});
 
 });
 
@@ -833,10 +969,7 @@ socket.on("join",(username)=>{
 
 onlineUsers.set(socket.id,username);
 
-io.emit(
-"online",
-onlineUsers.size
-);
+io.emit("online",onlineUsers.size);
 
 });
 
@@ -852,22 +985,11 @@ io.emit("message",msg);
 
 });
 
-socket.on("ai",(data)=>{
-
-socket.emit("ai",{
-text:"🤖 AI: " + data.text
-});
-
-});
-
 socket.on("disconnect",()=>{
 
 onlineUsers.delete(socket.id);
 
-io.emit(
-"online",
-onlineUsers.size
-);
+io.emit("online",onlineUsers.size);
 
 });
 
