@@ -16,7 +16,7 @@ app.use(express.json({ limit:"50mb" }));
 const users = new Map();
 const globalMessages = [];
 const onlineUsers = new Map();
-const friends = new Map();
+const avatars = new Map();
 
 const profiles = new Map();
 
@@ -43,7 +43,8 @@ res.send(`
 <head>
 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport"
+content="width=device-width,initial-scale=1.0">
 
 <title>Rucord X</title>
 
@@ -81,11 +82,8 @@ z-index:100;
 .login-box{
 width:380px;
 background:rgba(20,22,30,.92);
-border:1px solid rgba(255,255,255,.08);
-backdrop-filter:blur(20px);
 padding:40px;
 border-radius:28px;
-box-shadow:0 0 60px rgba(88,101,242,.25);
 }
 
 .logo{
@@ -93,9 +91,6 @@ font-size:42px;
 font-weight:800;
 margin-bottom:10px;
 text-align:center;
-background:linear-gradient(90deg,#fff,#8ea1ff);
--webkit-background-clip:text;
--webkit-text-fill-color:transparent;
 }
 
 .sub{
@@ -191,10 +186,6 @@ background:#202432;
 transform:translateX(4px);
 }
 
-.channel.active{
-background:linear-gradient(90deg,#5865f2,#7b61ff);
-}
-
 /* CHAT */
 
 .chat{
@@ -209,18 +200,10 @@ height:85px;
 border-bottom:1px solid rgba(255,255,255,.05);
 display:flex;
 align-items:center;
-justify-content:space-between;
 padding:0 30px;
-background:rgba(255,255,255,.02);
-backdrop-filter:blur(10px);
-}
-
-.chat-title{
 font-size:24px;
 font-weight:700;
 }
-
-/* MESSAGES */
 
 .messages{
 flex:1;
@@ -252,6 +235,9 @@ justify-content:center;
 font-weight:800;
 font-size:18px;
 flex-shrink:0;
+overflow:hidden;
+background-size:cover;
+background-position:center;
 }
 
 .message.me .avatar{
@@ -294,7 +280,6 @@ text-align:right;
 
 .input-bar{
 padding:24px;
-border-top:1px solid rgba(255,255,255,.05);
 display:flex;
 gap:16px;
 background:#12141c;
@@ -319,7 +304,6 @@ background:linear-gradient(135deg,#5865f2,#7b61ff);
 color:white;
 font-size:18px;
 cursor:pointer;
-font-weight:800;
 }
 
 /* PROFILE */
@@ -328,7 +312,7 @@ font-weight:800;
 display:none;
 position:fixed;
 inset:0;
-background:rgba(0,0,0,.6);
+background:rgba(0,0,0,.7);
 align-items:center;
 justify-content:center;
 z-index:999;
@@ -352,44 +336,28 @@ justify-content:center;
 font-size:36px;
 font-weight:800;
 margin:auto;
+overflow:hidden;
+background-size:cover;
+background-position:center;
 }
 
-.profile-name{
-margin-top:18px;
-text-align:center;
-font-size:28px;
-font-weight:800;
-}
+/* OFFICIAL */
 
-.profile-badge{
-text-align:center;
-margin-top:8px;
-font-size:14px;
-}
-
-.profile-bio{
-margin-top:20px;
-text-align:center;
-color:#9aa3b2;
-line-height:1.5;
-}
-
-/* MOBILE */
-
-@media(max-width:800px){
-
-.sidebar{
+#officialModal{
 display:none;
+position:fixed;
+inset:0;
+background:rgba(0,0,0,.7);
+align-items:center;
+justify-content:center;
+z-index:9999;
 }
 
-.messages{
-padding:16px;
-}
-
-.input-bar{
-padding:16px;
-}
-
+.official-card{
+width:420px;
+background:#181b24;
+padding:30px;
+border-radius:28px;
 }
 
 </style>
@@ -404,7 +372,9 @@ padding:16px;
 
 <div class="login-box">
 
-<div class="logo">Rucord X</div>
+<div class="logo">
+Rucord X
+</div>
 
 <div class="sub">
 Новый уровень общения
@@ -418,8 +388,8 @@ placeholder="Имя"
 
 <input
 id="password"
-class="input"
 type="password"
+class="input"
 placeholder="Пароль"
 >
 
@@ -453,10 +423,8 @@ class="btn register-btn"
 Rucord
 </div>
 
-<div
-class="online"
-id="onlineCount"
->
+<div id="onlineCount"
+class="online">
 Онлайн: 0
 </div>
 
@@ -464,16 +432,13 @@ id="onlineCount"
 
 <div class="channels">
 
-<div class="channel active">
+<div class="channel">
 # общий-чат
 </div>
 
-<div class="channel">
-👥 друзья
-</div>
-
-<div class="channel">
-🤖 ai
+<div class="channel"
+onclick="openOfficial()">
+🏅 Официальный статус
 </div>
 
 </div>
@@ -483,17 +448,13 @@ id="onlineCount"
 <div class="chat">
 
 <div class="chat-top">
-
-<div class="chat-title">
 # общий-чат
-</div>
-
 </div>
 
 <div
 class="messages"
-id="messages"
-></div>
+id="messages">
+</div>
 
 <div class="input-bar">
 
@@ -505,8 +466,7 @@ placeholder="Написать сообщение..."
 
 <button
 id="sendBtn"
-class="send"
->
+class="send">
 ➤
 </button>
 
@@ -524,50 +484,121 @@ class="send"
 
 <div
 class="profile-avatar"
-id="profileAvatar"
->
+id="profileAvatar">
 A
 </div>
 
-<div
-class="profile-name"
+<input
+type="file"
+id="avatarInput"
+style="
+margin-top:20px;
+color:white;
+">
+
+<h2
 id="profileName"
->
+style="
+margin-top:18px;
+text-align:center;
+">
 USER
-</div>
+</h2>
 
 <div
-class="profile-badge"
 id="profileBadge"
->
+style="
+text-align:center;
+margin-top:8px;
+">
 </div>
 
-<div
-class="profile-bio"
+<p
 id="profileBio"
->
+style="
+margin-top:20px;
+text-align:center;
+color:#9aa3b2;
+">
 Описание
-</div>
+</p>
 
 <textarea
 id="bioInput"
 class="input"
 placeholder="Новое описание"
-style="margin-top:20px;height:100px;"
-></textarea>
+style="height:100px;">
+</textarea>
 
 <button
 class="btn login-btn"
-onclick="saveBio()"
->
+onclick="saveBio()">
 Сохранить
 </button>
 
 <button
 class="btn register-btn"
-onclick="closeProfile()"
->
+onclick="closeProfile()">
 Закрыть
+</button>
+
+</div>
+
+</div>
+
+<!-- OFFICIAL -->
+
+<div id="officialModal">
+
+<div class="official-card">
+
+<h2 style="
+font-size:28px;
+margin-bottom:18px;">
+🏅 Официальный статус
+</h2>
+
+<p style="
+color:#9aa3b2;
+line-height:1.7;
+font-size:15px;
+">
+
+Чтобы получить официальный статус,
+напишите нам на почту:
+
+<br><br>
+
+<b style="
+color:white;
+font-size:18px;
+">
+skebobmessage@internet.ru
+</b>
+
+<br><br>
+
+В письме укажите:
+
+<br><br>
+
+• Название вашей компании<br>
+• Чем вы занимаетесь<br>
+• Ссылки на соцсети или сайт<br>
+• Почему аккаунт должен быть подтверждён
+
+<br><br>
+
+После проверки вы получите
+🏅 официальный значок.
+
+</p>
+
+<button
+class="btn login-btn"
+onclick="closeOfficial()"
+style="margin-top:20px;">
+Понятно
 </button>
 
 </div>
@@ -631,10 +662,10 @@ loadMessages();
 }
 
 document.getElementById("loginBtn")
-.onclick = () => login("login");
+.onclick = ()=>login("login");
 
 document.getElementById("registerBtn")
-.onclick = () => login("register");
+.onclick = ()=>login("register");
 
 // ================= BADGES =================
 
@@ -642,7 +673,6 @@ function getBadge(user){
 
 if(user === "AdminGrigory"
 || user === "SUIDKOP"){
-
 return " 🏅";
 }
 
@@ -671,7 +701,9 @@ msg.user === currentUser
 
 div.innerHTML = \`
 
-<div class="avatar">
+<div
+class="avatar"
+id="avatar_\${msg.user}">
 \${msg.user[0].toUpperCase()}
 </div>
 
@@ -679,14 +711,13 @@ div.innerHTML = \`
 
 <div
 class="name"
-onclick="openProfile('\${msg.user}')"
->
-\${escapeHtml(msg.user)}
+onclick="openProfile('\${msg.user}')">
+\${msg.user}
 \${getBadge(msg.user)}
 </div>
 
 <div class="text">
-\${escapeHtml(msg.text)}
+\${msg.text}
 </div>
 
 </div>
@@ -695,23 +726,20 @@ onclick="openProfile('\${msg.user}')"
 
 messages.appendChild(div);
 
+loadAvatar(msg.user);
+
 messages.scrollTop =
 messages.scrollHeight;
 
 }
 
-function escapeHtml(text){
-
-return text
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;");
-
-}
-
 async function loadMessages(){
 
-const res = await fetch("/messages");
-const data = await res.json();
+const res =
+await fetch("/messages");
+
+const data =
+await res.json();
 
 document.getElementById("messages")
 .innerHTML = "";
@@ -757,7 +785,8 @@ async function openProfile(user){
 
 openedProfile = user;
 
-const res = await fetch("/profile",{
+const res =
+await fetch("/profile",{
 method:"POST",
 headers:{
 "Content-Type":"application/json"
@@ -767,14 +796,44 @@ user
 })
 });
 
-const data = await res.json();
+const data =
+await res.json();
 
 document.getElementById("profileModal")
 .style.display = "flex";
 
-document.getElementById("profileAvatar")
-.innerText =
+const avatarRes =
+await fetch("/avatar",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user
+})
+});
+
+const avatarData =
+await avatarRes.json();
+
+const avatar =
+document.getElementById("profileAvatar");
+
+if(avatarData.avatar){
+
+avatar.innerHTML = "";
+
+avatar.style.backgroundImage =
+"url(" + avatarData.avatar + ")";
+
+}else{
+
+avatar.style.backgroundImage = "";
+
+avatar.innerText =
 user[0].toUpperCase();
+
+}
 
 document.getElementById("profileName")
 .innerHTML =
@@ -788,11 +847,13 @@ let badge = "";
 
 if(data.official){
 
-badge = "🏅 Официальный аккаунт";
+badge =
+"🏅 Официальный аккаунт";
 
 }else if(data.verified){
 
-badge = "✔️ Подтвержденный аккаунт";
+badge =
+"✔️ Подтвержденный аккаунт";
 
 }
 
@@ -804,9 +865,18 @@ if(user === currentUser){
 document.getElementById("bioInput")
 .style.display = "block";
 
+document.getElementById("avatarInput")
+.style.display = "block";
+
+document.getElementById("avatarInput")
+.onchange = uploadAvatar;
+
 }else{
 
 document.getElementById("bioInput")
+.style.display = "none";
+
+document.getElementById("avatarInput")
 .style.display = "none";
 
 }
@@ -838,6 +908,89 @@ bio
 });
 
 openProfile(currentUser);
+
+}
+
+// ================= AVATARS =================
+
+async function loadAvatar(user){
+
+const res =
+await fetch("/avatar",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user
+})
+});
+
+const data =
+await res.json();
+
+if(!data.avatar) return;
+
+const el =
+document.getElementById(
+"avatar_" + user
+);
+
+if(!el) return;
+
+el.innerHTML = "";
+
+el.style.backgroundImage =
+"url(" + data.avatar + ")";
+
+}
+
+async function uploadAvatar(){
+
+const file =
+document.getElementById("avatarInput")
+.files[0];
+
+if(!file) return;
+
+const reader =
+new FileReader();
+
+reader.onload =
+async function(){
+
+await fetch("/setAvatar",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user:currentUser,
+avatar:reader.result
+})
+});
+
+openProfile(currentUser);
+
+};
+
+reader.readAsDataURL(file);
+
+}
+
+// ================= OFFICIAL =================
+
+function openOfficial(){
+
+document.getElementById("officialModal")
+.style.display = "flex";
+
+}
+
+function closeOfficial(){
+
+document.getElementById("officialModal")
+.style.display = "none";
 
 }
 
@@ -902,7 +1055,8 @@ app.post("/login",(req,res)=>{
 
 const { username,password } = req.body;
 
-const user = users.get(username);
+const user =
+users.get(username);
 
 if(!user || user.password !== password){
 
@@ -957,6 +1111,31 @@ profiles.get(user).bio = bio;
 
 res.json({
 success:true
+});
+
+});
+
+// ================= AVATAR API =================
+
+app.post("/setAvatar",(req,res)=>{
+
+const { user,avatar } = req.body;
+
+avatars.set(user,avatar);
+
+res.json({
+success:true
+});
+
+});
+
+app.post("/avatar",(req,res)=>{
+
+const { user } = req.body;
+
+res.json({
+avatar:
+avatars.get(user) || null
 });
 
 });
