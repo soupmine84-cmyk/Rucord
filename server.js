@@ -5,27 +5,31 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
-const io = new Server(server, {
-  cors: { origin: "*" }
+const io = new Server(server,{
+cors:{ origin:"*" }
 });
 
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json());
 
 // ================= DATA =================
 
 const users = new Map();
 const globalMessages = [];
 const onlineUsers = new Map();
+const friends = new Map();
 
 // ================= HTML =================
 
-app.get("/", (req, res) => {
-  res.send(`
+app.get("/",(req,res)=>{
+
+res.send(`
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+
 <title>Rucord X</title>
 
 <style>
@@ -34,7 +38,7 @@ app.get("/", (req, res) => {
 margin:0;
 padding:0;
 box-sizing:border-box;
-font-family:Inter,sans-serif;
+font-family:Arial;
 }
 
 body{
@@ -49,52 +53,25 @@ overflow:hidden;
 #login{
 position:fixed;
 inset:0;
-background:
-radial-gradient(circle at top left,#5865f2 0%,transparent 30%),
-radial-gradient(circle at bottom right,#8f3dff 0%,transparent 30%),
-#0f1117;
 display:flex;
 align-items:center;
 justify-content:center;
+background:#0f1117;
 z-index:100;
 }
 
 .login-box{
-width:380px;
-background:rgba(20,22,30,.92);
-border:1px solid rgba(255,255,255,.08);
-backdrop-filter:blur(20px);
+width:360px;
+background:#161922;
 padding:40px;
-border-radius:28px;
-box-shadow:0 0 60px rgba(88,101,242,.25);
-animation:show .4s ease;
-}
-
-@keyframes show{
-from{
-opacity:0;
-transform:translateY(20px) scale(.95);
-}
-to{
-opacity:1;
-transform:none;
-}
+border-radius:24px;
 }
 
 .logo{
 font-size:42px;
 font-weight:800;
-margin-bottom:10px;
 text-align:center;
-background:linear-gradient(90deg,#fff,#8ea1ff);
--webkit-background-clip:text;
--webkit-text-fill-color:transparent;
-}
-
-.sub{
-text-align:center;
-color:#8f96a3;
-margin-bottom:30px;
+margin-bottom:20px;
 }
 
 .input{
@@ -102,50 +79,30 @@ width:100%;
 padding:16px;
 border:none;
 outline:none;
-background:#161922;
+background:#1f2430;
 color:white;
 border-radius:16px;
 margin-bottom:14px;
-font-size:15px;
-border:1px solid transparent;
-transition:.2s;
-}
-
-.input:focus{
-border-color:#5865f2;
-box-shadow:0 0 0 4px rgba(88,101,242,.15);
 }
 
 .btn{
 width:100%;
-padding:15px;
+padding:16px;
 border:none;
 border-radius:16px;
-font-weight:700;
 cursor:pointer;
-transition:.2s;
-font-size:15px;
+font-weight:700;
+margin-top:10px;
 }
 
 .login-btn{
 background:#5865f2;
 color:white;
-margin-top:5px;
-}
-
-.login-btn:hover{
-transform:translateY(-2px);
-background:#6d78ff;
 }
 
 .register-btn{
-margin-top:10px;
-background:#232734;
-color:#cfd3dc;
-}
-
-.register-btn:hover{
-background:#2b3040;
+background:#2a2f3d;
+color:white;
 }
 
 /* APP */
@@ -158,51 +115,38 @@ height:100vh;
 /* SIDEBAR */
 
 .sidebar{
-width:300px;
+width:260px;
 background:#12141c;
-border-right:1px solid rgba(255,255,255,.05);
-display:flex;
-flex-direction:column;
-}
-
-.sidebar-top{
-padding:24px;
-border-bottom:1px solid rgba(255,255,255,.05);
+padding:20px;
+overflow:auto;
 }
 
 .brand{
 font-size:28px;
 font-weight:800;
+margin-bottom:10px;
 }
 
 .online{
-margin-top:8px;
-color:#7d8594;
-font-size:14px;
-}
-
-.channels{
-padding:15px;
-overflow:auto;
+margin-bottom:20px;
+color:#8b93a7;
 }
 
 .channel{
-padding:16px;
-background:#181b24;
-border-radius:18px;
+padding:14px;
+background:#1b1f2a;
+border-radius:14px;
 margin-bottom:10px;
 cursor:pointer;
 transition:.2s;
-font-weight:600;
 }
 
 .channel:hover{
-background:#202432;
-transform:translateX(4px);
+background:#2b3142;
 }
 
 .channel.active{
-background:linear-gradient(90deg,#5865f2,#7b61ff);
+background:#5865f2;
 }
 
 /* CHAT */
@@ -211,168 +155,121 @@ background:linear-gradient(90deg,#5865f2,#7b61ff);
 flex:1;
 display:flex;
 flex-direction:column;
-background:#0f1117;
 }
 
 .chat-top{
-height:85px;
-border-bottom:1px solid rgba(255,255,255,.05);
+height:80px;
 display:flex;
 align-items:center;
-justify-content:space-between;
-padding:0 30px;
-background:rgba(255,255,255,.02);
-backdrop-filter:blur(10px);
-}
-
-.chat-title{
+padding:0 24px;
+border-bottom:1px solid rgba(255,255,255,.05);
 font-size:24px;
 font-weight:700;
 }
 
-.actions{
-display:flex;
-gap:10px;
-}
-
-.action{
-background:#1c202c;
-border:none;
-color:white;
-padding:12px 18px;
-border-radius:14px;
-cursor:pointer;
-transition:.2s;
-font-weight:600;
-}
-
-.action:hover{
-background:#5865f2;
-transform:translateY(-2px);
-}
-
-/* MESSAGES */
-
 .messages{
 flex:1;
 overflow:auto;
-padding:30px;
+padding:20px;
 display:flex;
 flex-direction:column;
-gap:18px;
+gap:16px;
 }
+
+/* MESSAGE */
 
 .message{
 display:flex;
-gap:14px;
+gap:12px;
 align-items:flex-start;
-animation:fade .2s ease;
 }
 
-@keyframes fade{
-from{
-opacity:0;
-transform:translateY(10px);
-}
-to{
-opacity:1;
-transform:none;
-}
+.message.me{
+flex-direction:row-reverse;
 }
 
 .avatar{
-width:48px;
-height:48px;
+width:46px;
+height:46px;
 border-radius:50%;
-background:linear-gradient(135deg,#5865f2,#8f3dff);
+background:#5865f2;
 display:flex;
 align-items:center;
 justify-content:center;
 font-weight:800;
-font-size:18px;
 flex-shrink:0;
 }
 
+.message.me .avatar{
+background:#ff4fd8;
+}
+
 .bubble{
-background:#181b24;
-padding:16px;
-border-radius:20px;
-max-width:700px;
-box-shadow:0 4px 20px rgba(0,0,0,.25);
+background:#1b1f2a;
+padding:14px;
+border-radius:18px;
+max-width:600px;
+}
+
+.message.me .bubble{
+background:linear-gradient(135deg,#5865f2,#7b61ff);
 }
 
 .name{
 font-weight:700;
-margin-bottom:8px;
-color:#aab2ff;
+margin-bottom:6px;
+color:#9ba8ff;
 }
 
-.text{
-line-height:1.5;
-font-size:15px;
+.message.me .name{
+color:white;
+text-align:right;
+}
+
+.message.me .text{
+text-align:right;
 }
 
 /* INPUT */
 
 .input-bar{
-padding:24px;
-border-top:1px solid rgba(255,255,255,.05);
+padding:20px;
 display:flex;
-gap:16px;
+gap:12px;
 background:#12141c;
 }
 
 .msg-input{
 flex:1;
-background:#1a1d27;
+padding:18px;
 border:none;
 outline:none;
-padding:18px;
-border-radius:20px;
+background:#1b1f2a;
 color:white;
-font-size:15px;
+border-radius:18px;
 }
 
 .send{
 width:70px;
 border:none;
-border-radius:20px;
-background:linear-gradient(135deg,#5865f2,#7b61ff);
+border-radius:18px;
+background:#5865f2;
 color:white;
-font-size:18px;
+font-size:20px;
 cursor:pointer;
-font-weight:800;
-transition:.2s;
 }
 
-.send:hover{
-transform:scale(1.05);
+/* FRIENDS */
+
+.friend{
+padding:14px;
+background:#1b1f2a;
+border-radius:14px;
+margin-top:10px;
 }
 
-/* MOBILE */
-
-@media(max-width:800px){
-
-.sidebar{
+.hidden{
 display:none;
-}
-
-.chat-top{
-padding:0 16px;
-}
-
-.chat-title{
-font-size:18px;
-}
-
-.messages{
-padding:16px;
-}
-
-.input-bar{
-padding:16px;
-}
-
 }
 
 </style>
@@ -387,17 +284,32 @@ padding:16px;
 <div class="login-box">
 
 <div class="logo">Rucord X</div>
-<div class="sub">Новый уровень общения</div>
 
-<input id="username" class="input" placeholder="Имя">
-<input id="password" class="input" type="password" placeholder="Пароль">
+<input
+id="username"
+class="input"
+placeholder="Имя"
+>
 
-<button id="loginBtn" class="btn login-btn">
+<input
+id="password"
+type="password"
+class="input"
+placeholder="Пароль"
+>
+
+<button
+id="loginBtn"
+class="btn login-btn"
+>
 Войти
 </button>
 
-<button id="registerBtn" class="btn register-btn">
-Создать аккаунт
+<button
+id="registerBtn"
+class="btn register-btn"
+>
+Регистрация
 </button>
 
 </div>
@@ -410,25 +322,36 @@ padding:16px;
 
 <div class="sidebar">
 
-<div class="sidebar-top">
-<div class="brand">Rucord</div>
-<div class="online" id="onlineCount">
+<div class="brand">
+Rucord
+</div>
+
+<div
+class="online"
+id="onlineCount"
+>
 Онлайн: 0
 </div>
+
+<div
+class="channel active"
+onclick="openTab('chat')"
+>
+💬 Чат
 </div>
 
-<div class="channels">
-<div class="channel active">
-# общий-чат
+<div
+class="channel"
+onclick="openTab('friends')"
+>
+👥 Друзья
 </div>
 
-<div class="channel">
-🎮 игры
-</div>
-
-<div class="channel">
-🤖 ai
-</div>
+<div
+class="channel"
+onclick="openTab('ai')"
+>
+🤖 AI
 </div>
 
 </div>
@@ -436,20 +359,56 @@ padding:16px;
 <div class="chat">
 
 <div class="chat-top">
-
-<div class="chat-title">
-# общий-чат
+Rucord X
 </div>
 
-<div class="actions">
-<button class="action">🎮</button>
-<button class="action">📞</button>
-<button class="action">🤖</button>
-</div>
+<!-- CHAT -->
+
+<div
+class="messages"
+id="messages"
+></div>
+
+<!-- FRIENDS -->
+
+<div
+class="messages hidden"
+id="friendsTab"
+>
+
+<h2>Друзья</h2>
+
+<div id="friendsList"></div>
+
+<br>
+
+<input
+id="friendInput"
+class="msg-input"
+placeholder="Имя друга"
+>
+
+<br><br>
+
+<button
+class="send"
+onclick="addFriend()"
+>
++
+</button>
 
 </div>
 
-<div class="messages" id="messages"></div>
+<!-- AI -->
+
+<div
+class="messages hidden"
+id="aiTab"
+>
+
+<div id="aiMessages"></div>
+
+</div>
 
 <div class="input-bar">
 
@@ -459,7 +418,10 @@ class="msg-input"
 placeholder="Написать сообщение..."
 >
 
-<button id="sendBtn" class="send">
+<button
+id="sendBtn"
+class="send"
+>
 ➤
 </button>
 
@@ -477,7 +439,7 @@ const socket = io();
 
 let currentUser = "";
 
-// ===== LOGIN =====
+// ================= LOGIN =================
 
 async function login(type){
 
@@ -512,31 +474,69 @@ return;
 
 currentUser = username;
 
-document.getElementById("login").style.display = "none";
-document.getElementById("app").style.display = "flex";
+document.getElementById("login")
+.style.display = "none";
+
+document.getElementById("app")
+.style.display = "flex";
 
 socket.emit("join",username);
 
 loadMessages();
+loadFriends();
 
 }
 
 document.getElementById("loginBtn")
-.onclick = () => login("login");
+.onclick = ()=>login("login");
 
 document.getElementById("registerBtn")
-.onclick = () => login("register");
+.onclick = ()=>login("register");
 
-// ===== MESSAGES =====
+// ================= TABS =================
+
+function openTab(tab){
+
+document.getElementById("messages")
+.classList.add("hidden");
+
+document.getElementById("friendsTab")
+.classList.add("hidden");
+
+document.getElementById("aiTab")
+.classList.add("hidden");
+
+if(tab === "chat"){
+document.getElementById("messages")
+.classList.remove("hidden");
+}
+
+if(tab === "friends"){
+document.getElementById("friendsTab")
+.classList.remove("hidden");
+}
+
+if(tab === "ai"){
+document.getElementById("aiTab")
+.classList.remove("hidden");
+}
+
+}
+
+// ================= CHAT =================
 
 function addMessage(msg){
 
 const messages =
 document.getElementById("messages");
 
-const div = document.createElement("div");
+const div =
+document.createElement("div");
 
-div.className = "message";
+div.className =
+msg.user === currentUser
+? "message me"
+: "message";
 
 div.innerHTML = \`
 <div class="avatar">
@@ -544,13 +544,15 @@ div.innerHTML = \`
 </div>
 
 <div class="bubble">
+
 <div class="name">
-\${escapeHtml(msg.user)}
+\${msg.user}
 </div>
 
 <div class="text">
-\${escapeHtml(msg.text)}
+\${msg.text}
 </div>
+
 </div>
 \`;
 
@@ -561,20 +563,16 @@ messages.scrollHeight;
 
 }
 
-function escapeHtml(text){
-
-return text
-.replace(/</g,"&lt;")
-.replace(/>/g,"&gt;");
-
-}
-
 async function loadMessages(){
 
-const res = await fetch("/messages");
-const data = await res.json();
+const res =
+await fetch("/messages");
 
-document.getElementById("messages").innerHTML = "";
+const data =
+await res.json();
+
+document.getElementById("messages")
+.innerHTML = "";
 
 data.forEach(addMessage);
 
@@ -585,7 +583,8 @@ function sendMessage(){
 const input =
 document.getElementById("messageInput");
 
-const text = input.value.trim();
+const text =
+input.value.trim();
 
 if(!text) return;
 
@@ -610,15 +609,124 @@ sendMessage();
 
 });
 
-// ===== SOCKET =====
+// ================= AI =================
+
+function sendAI(){
+
+const text =
+document.getElementById("messageInput")
+.value;
+
+socket.emit("ai",{
+user:currentUser,
+text
+});
+
+}
+
+socket.on("ai",msg=>{
+
+const div =
+document.createElement("div");
+
+div.className = "bubble";
+
+div.innerHTML = \`
+<div class="name">
+AI
+</div>
+
+<div class="text">
+\${msg.text}
+</div>
+\`;
+
+document.getElementById("aiMessages")
+.appendChild(div);
+
+});
+
+// ================= FRIENDS =================
+
+async function addFriend(){
+
+const friend =
+document.getElementById("friendInput")
+.value;
+
+const res =
+await fetch("/addFriend",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user:currentUser,
+friend
+})
+});
+
+const data =
+await res.json();
+
+alert(
+data.success
+? "Друг добавлен"
+: data.message
+);
+
+loadFriends();
+
+}
+
+async function loadFriends(){
+
+const res =
+await fetch("/friends",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({
+user:currentUser
+})
+});
+
+const data =
+await res.json();
+
+const list =
+document.getElementById("friendsList");
+
+list.innerHTML = "";
+
+data.forEach(friend=>{
+
+const div =
+document.createElement("div");
+
+div.className = "friend";
+
+div.innerText = "👤 " + friend;
+
+list.appendChild(div);
+
+});
+
+}
+
+// ================= SOCKET =================
 
 socket.on("message",msg=>{
 addMessage(msg);
 });
 
 socket.on("online",count=>{
+
 document.getElementById("onlineCount")
-.innerText = "Онлайн: " + count;
+.innerText =
+"Онлайн: " + count;
+
 });
 
 </script>
@@ -626,6 +734,7 @@ document.getElementById("onlineCount")
 </body>
 </html>
 `);
+
 });
 
 // ================= API =================
@@ -657,7 +766,8 @@ app.post("/login",(req,res)=>{
 
 const { username,password } = req.body;
 
-const user = users.get(username);
+const user =
+users.get(username);
 
 if(!user || user.password !== password){
 
@@ -678,106 +788,11 @@ app.get("/messages",(req,res)=>{
 res.json(globalMessages);
 });
 
-// ================= SOCKET =================
-
-io.on("connection",(socket)=>{
-
-socket.on("join",(username)=>{
-
-onlineUsers.set(socket.id,username);
-
-io.emit("online",onlineUsers.size);
-
-});
-
-socket.on("message",(msg)=>{
-
-const message = {
-user:msg.user,
-text:msg.text
-};
-
-globalMessages.push(message);
-
-if(globalMessages.length > 100){
-globalMessages.shift();
-}
-
-io.emit("message",message);
-
-});
-
-socket.on("disconnect",()=>{
-
-onlineUsers.delete(socket.id);
-
-io.emit("online",onlineUsers.size);
-
-});
-
-});
-
-// ================= START =================
-
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT,()=>{
-
-console.log("SERVER STARTED " + PORT);
-
-});
-/*
-
-ДОБАВЬ ЭТО В ТВОЙ ТЕКУЩИЙ server.js
-
-ЭТО НЕ ВЕСЬ ФАЙЛ.
-ЭТО АПГРЕЙД ФУНКЦИЙ.
-
-*/
-
-
-// ================= NEW DATA =================
-
-const friends = new Map();
-const privateChats = new Map();
-const aiMemory = new Map();
-const leaderboard = new Map();
-
-
-// ================= AI =================
-
-function aiReply(text,user){
-
-const t = text.toLowerCase();
-
-if(!aiMemory.has(user)){
-aiMemory.set(user,[]);
-}
-
-aiMemory.get(user).push(text);
-
-if(t.includes("привет"))
-return "👋 Привет " + user;
-
-if(t.includes("кто ты"))
-return "🤖 Я AI бот Rucord";
-
-if(t.includes("помощь"))
-return "/ai /online /leaderboard";
-
-if(t.includes("игра"))
-return "🎮 Открой вкладку игр";
-
-return "🧠 AI думает: " + text;
-
-}
-
-
-// ================= FRIENDS API =================
+// ================= FRIENDS =================
 
 app.post("/addFriend",(req,res)=>{
 
-const { user, friend } = req.body;
+const { user,friend } = req.body;
 
 if(!users.has(friend)){
 
@@ -800,7 +815,6 @@ success:true
 
 });
 
-
 app.post("/friends",(req,res)=>{
 
 const { user } = req.body;
@@ -811,274 +825,63 @@ friends.get(user) || []
 
 });
 
+// ================= SOCKET =================
 
-// ================= PRIVATE CHAT =================
+io.on("connection",(socket)=>{
 
-app.post("/privateMessages",(req,res)=>{
+socket.on("join",(username)=>{
 
-const { u1,u2 } = req.body;
+onlineUsers.set(socket.id,username);
 
-const key =
-[u1,u2].sort().join("_");
-
-res.json(
-privateChats.get(key) || []
+io.emit(
+"online",
+onlineUsers.size
 );
 
 });
 
+socket.on("message",(msg)=>{
 
-// ================= SOCKET =================
+globalMessages.push(msg);
 
-socket.on("privateMessage",(msg)=>{
-
-const key =
-[msg.from,msg.to]
-.sort()
-.join("_");
-
-if(!privateChats.has(key)){
-
-privateChats.set(key,[]);
-
+if(globalMessages.length > 100){
+globalMessages.shift();
 }
 
-privateChats.get(key).push(msg);
-
-const target =
-Array.from(onlineUsers.entries())
-.find(([id,name])=>name===msg.to);
-
-if(target){
-
-io.to(target[0])
-.emit("privateMessage",msg);
-
-}
-
-socket.emit("privateMessage",msg);
+io.emit("message",msg);
 
 });
-
-
-// ================= AI CHAT =================
 
 socket.on("ai",(data)=>{
 
-const answer =
-aiReply(data.text,data.user);
-
 socket.emit("ai",{
-user:"AI",
-text:answer
+text:"🤖 AI: " + data.text
 });
 
 });
 
+socket.on("disconnect",()=>{
 
-// ================= LEADERBOARD =================
+onlineUsers.delete(socket.id);
 
-function addScore(user){
-
-const current =
-leaderboard.get(user) || 0;
-
-leaderboard.set(user,current + 1);
-
-}
-
-app.get("/leaderboard",(req,res)=>{
-
-const top =
-Array.from(leaderboard.entries())
-.sort((a,b)=>b[1]-a[1]);
-
-res.json(top);
+io.emit(
+"online",
+onlineUsers.size
+);
 
 });
 
-
-// ================= TIC TAC TOE =================
-
-const games = new Map();
-
-socket.on("tttStart",(user)=>{
-
-games.set(user,{
-board:["","","","","","","","",""],
-turn:"X"
 });
 
-socket.emit("tttData",
-games.get(user));
+// ================= START =================
+
+const PORT =
+process.env.PORT || 3000;
+
+server.listen(PORT,()=>{
+
+console.log(
+"SERVER STARTED " + PORT
+);
 
 });
-
-
-socket.on("tttMove",(data)=>{
-
-const game =
-games.get(data.user);
-
-if(!game) return;
-
-if(game.board[data.index] !== "")
-return;
-
-game.board[data.index] =
-game.turn;
-
-game.turn =
-game.turn === "X"
-? "O"
-: "X";
-
-socket.emit("tttData",game);
-
-});
-
-
-// ================= QUIZ =================
-
-const quiz = [
-
-{
-q:"Столица Франции?",
-a:"париж"
-},
-
-{
-q:"2+2?",
-a:"4"
-}
-
-];
-
-socket.on("quiz",()=>{
-
-const random =
-quiz[
-Math.floor(
-Math.random()*quiz.length
-)
-];
-
-socket.emit("quiz",random);
-
-});
-
-
-// ================= PVP =================
-
-socket.on("pvpHit",(user)=>{
-
-addScore(user);
-
-io.emit("leaderboard",
-Array.from(
-leaderboard.entries()
-));
-
-});
-
-
-
-
-// ================= FRONTEND HTML =================
-
-/*
-
-В HTML ДОБАВЬ:
-
-1. SIDEBAR FRIENDS
-2. AI BUTTON
-3. PRIVATE CHAT
-4. GAMES PANEL
-5. THEMES
-6. REACTIONS
-
-*/
-
-
-===== FRIENDS SIDEBAR =====
-
-/*
-
-<div class="friends">
-<h3>Друзья</h3>
-<div id="friendsList"></div>
-</div>
-
-*/
-
-
-===== AI BUTTON =====
-
-/*
-
-<button onclick="openAI()">
-🤖 AI
-</button>
-
-*/
-
-
-===== THEMES =====
-
-/*
-
-body.light{
-background:#f5f5f5;
-color:black;
-}
-
-*/
-
-
-// ===== ANIMATED BG =====
-
-
-
-body::before{
-content:"";
-position:fixed;
-inset:0;
-background:
-radial-gradient(circle,#5865f2 0%,transparent 50%);
-filter:blur(120px);
-opacity:.3;
-animation:bg 10s infinite alternate;
-}
-
-@keyframes bg{
-from{
-transform:translateX(-100px);
-}
-to{
-transform:translateX(100px);
-}
-}
-
-
-
-==== EMOJI REACTIONS =====
-
-
-
-<div class="reactions">
-👍 ❤️ 😂 🔥
-</div>
-
-*/
-
-
-===== PROFILE CARD =====
-
-
-
-<div class="profile-card">
-<img src="avatar">
-<h2>USERNAME</h2>
-<p>online</p>
-</div>
-
